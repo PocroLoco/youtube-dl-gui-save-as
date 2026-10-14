@@ -75,4 +75,4 @@ jobs:
             --title "Mac build" \
             --notes "Latest Mac build of this fork (Apple Silicon and Intel), built from ${GITHUB_SHA::7}.
 
-          Not signed with an Apple developer certificate, so the first time you open it: right-click the app → Open, or allow it in System Settings → Privacy & Security."
+          Not signed with an Apple developer certificate, so macOS blocks it the first time: click Done, then go to System Settings → Privacy & Security, scroll down, and click Open Anyway. You only have to do this once."
