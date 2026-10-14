@@ -131,6 +131,17 @@ pub struct OutputOverrides {
   pub audio_file_name_template: Option<String>,
   pub restrict_filenames: Option<bool>,
   pub partial_download: Option<PartialDownloadOverride>,
+  /// Where the user chose to save this download in the "Save as" prompt.
+  pub save_as: Option<SaveAsOverride>,
+}
+
+/// Exactly one of these is set: a full file path for a single video, or a
+/// folder for downloads that produce several files (playlists).
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAsOverride {
+  pub file_path: Option<String>,
+  pub dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

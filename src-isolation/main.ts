@@ -37,10 +37,14 @@ const allowedCommands: Set<string> = new Set([
     'plugin:opener|reveal_item_in_dir',
     'plugin:clipboard-manager|read_text',
     'plugin:dialog|open',
+    'plugin:dialog|save',
     'plugin:webview|internal_toggle_devtools',
     'plugin:window|set_badge_count',
     'plugin:window|set_progress_bar',
     'plugin:window|request_user_attention',
+    'plugin:window|show',
+    'plugin:window|unminimize',
+    'plugin:window|set_focus',
     'plugin:notification|is_permission_granted',
 ]);
 

@@ -10,6 +10,7 @@ import { DownloadOptions, DownloadOverrides, MediaAddPayload, MediaItem, TrackTy
 import { useMediaSizeStore } from './size.ts';
 import { useMediaDiagnosticsStore } from './diagnostics.ts';
 import { useSettingsStore } from '../settings.ts';
+import { useMediaSaveAsStore } from './saveAs.ts';
 import { Group } from '../../tauri/types/group.ts';
 import { notify, notifyGroup } from '../../tauri/notifications';
 import { NotificationKind } from '../../tauri/types/app';
@@ -42,6 +43,7 @@ export const useMediaStore = defineStore('media', () => {
   const diagnosticsStore = useMediaDiagnosticsStore();
   const settingsStore = useSettingsStore();
   const watchClipboardStore = useWatchClipboardStore();
+  const saveAsStore = useMediaSaveAsStore();
   const pendingReadyGroups = new Map<string, PendingReadyGroup>();
 
   function resolvePendingReadyGroup(groupId: string, resolvedIds: string[]) {
@@ -318,15 +320,32 @@ export const useMediaStore = defineStore('media', () => {
     groupId: string,
     options: DownloadOptions,
   ) {
-    watchClipboardStore.disable();
     const group = groupStore.findGroupById(groupId);
     if (!group) return;
 
     const items: MediaItem[] = Object.values(group.items);
     const itemsWithoutLeader: MediaItem[] = items.filter(item => !item.entries && stateStore.getState(item.id) !== MediaState.done);
+    if (itemsWithoutLeader.length === 0) return;
+
+    // Browser-style "Save as": ask before anything is downloaded. A resumed
+    // download keeps the spot it was started with and never asks again.
+    let saveAs = saveAsStore.getChoice(groupId);
+    const groupState = stateStore.getGroupState(groupId);
+    const isResume = groupState === MediaState.paused || groupState === MediaState.pausedList;
+    if (!saveAs && !isResume && saveAsStore.isEnabled()) {
+      if (saveAsStore.isPrompting(groupId)) return;
+      const choice = await saveAsStore.askWhereToSave(group, itemsWithoutLeader, options);
+      if (!choice) return; // Cancelled: nothing is downloaded.
+      saveAs = choice;
+    }
+
+    watchClipboardStore.disable();
     const encodings = optionsStore.getEncodings(groupId);
     const tracks = optionsStore.getTracks(groupId);
-    const overrides = optionsStore.getOverrides(groupId);
+    const baseOverrides = optionsStore.getOverrides(groupId);
+    const overrides: DownloadOverrides | undefined = saveAs
+      ? { ...baseOverrides, output: { ...baseOverrides?.output, saveAs } }
+      : baseOverrides;
     const resolvedOptions: DownloadOptions = {
       ...options,
       audioEncoding: encodings?.audio,
@@ -334,8 +353,6 @@ export const useMediaStore = defineStore('media', () => {
       audioTrack: tracks?.audio,
       videoTrack: tracks?.video,
     };
-
-    if (itemsWithoutLeader.length === 0) return;
 
     const newState = group.isCombined ? MediaState.downloadingList : MediaState.downloading;
     items
@@ -452,6 +469,7 @@ export const useMediaStore = defineStore('media', () => {
     diagnosticsStore.removeDiagnostics(group.id);
     destinationStore.deleteDestinations(group.id);
     optionsStore.removeOptions(group.id);
+    saveAsStore.forget(group.id);
     groupStore.cancelGroup(group.id);
     groupStore.deleteGroup(group.id);
   }

@@ -1,8 +1,8 @@
 use super::{build_format_args, build_input_filter_args, build_location_args, build_output_args};
 use crate::models::download::{
   AudioFormat, AudioPostprocessPreset, DownloadSection, FormatOptions, InputFilterOptions,
-  PartialDownloadOverride, PlaylistMode, TranscodePolicy, VideoContainer, VideoPostprocessMode,
-  VideoPostprocessPreset,
+  PartialDownloadOverride, PlaylistMode, SaveAsOverride, TranscodePolicy, VideoContainer,
+  VideoPostprocessMode, VideoPostprocessPreset,
 };
 use crate::models::TrackType;
 use crate::runners::template_context::TemplateContext;
@@ -890,6 +890,7 @@ fn location_args_use_track_specific_preferences() {
     video_download_dir: Some("/tmp/video".into()),
     video_directory_template: "%(playlist_title)s".into(),
     audio_directory_template: "%(uploader)s".into(),
+    ask_download_location: false,
   };
 
   let args = build_location_args(
@@ -897,9 +898,84 @@ fn location_args_use_track_specific_preferences() {
     &template_context,
     &output,
     &prefs,
+    None,
     PathBuf::from("/tmp/fallback"),
   );
 
   assert_eq!(args[0], "-o");
   assert!(args[1].contains("/tmp/video"));
+}
+
+fn save_as_location(save_as: SaveAsOverride) -> Vec<String> {
+  let template_context = TemplateContext {
+    values: HashMap::new(),
+  };
+  let output = OutputSettings {
+    download_dir: Some("/tmp/global".into()),
+    ..OutputSettings::default()
+  };
+  let prefs = PathPreferences {
+    video_download_dir: Some("/tmp/video".into()),
+    video_directory_template: "%(uploader)s".into(),
+    ..PathPreferences::default()
+  };
+  build_location_args(
+    &TrackType::Video,
+    &template_context,
+    &output,
+    &prefs,
+    Some(&save_as),
+    PathBuf::from("/tmp/fallback"),
+  )
+}
+
+#[test]
+fn save_as_file_path_is_used_exactly_with_real_extension() {
+  let args = save_as_location(SaveAsOverride {
+    file_path: Some("/Users/me/Movies/Beach Day.mp4".into()),
+    dir: None,
+  });
+
+  assert_eq!(args, vec!["-o", "/Users/me/Movies/Beach Day.%(ext)s"]);
+}
+
+#[test]
+fn save_as_keeps_dots_that_are_not_media_extensions() {
+  let args = save_as_location(SaveAsOverride {
+    file_path: Some("/Users/me/Movies/Vol. 2".into()),
+    dir: None,
+  });
+
+  assert_eq!(args[1], "/Users/me/Movies/Vol. 2.%(ext)s");
+}
+
+#[test]
+fn save_as_escapes_percent_signs() {
+  let args = save_as_location(SaveAsOverride {
+    file_path: Some("/Users/me/100% real.mp4".into()),
+    dir: None,
+  });
+
+  assert_eq!(args[1], "/Users/me/100%% real.%(ext)s");
+}
+
+#[test]
+fn save_as_dir_replaces_saved_location_but_keeps_templates() {
+  let args = save_as_location(SaveAsOverride {
+    file_path: None,
+    dir: Some("/Volumes/External/Playlists".into()),
+  });
+
+  assert!(args[1].starts_with("/Volumes/External/Playlists/%(uploader)s/"));
+  assert!(!args[1].contains("/tmp/video"));
+}
+
+#[test]
+fn blank_save_as_falls_back_to_saved_location() {
+  let args = save_as_location(SaveAsOverride {
+    file_path: Some("  ".into()),
+    dir: None,
+  });
+
+  assert!(args[1].starts_with("/tmp/video/"));
 }

@@ -9,6 +9,7 @@ pub struct PathPreferences {
   pub video_download_dir: Option<String>,
   pub video_directory_template: String,
   pub audio_directory_template: String,
+  pub ask_download_location: bool,
 }
 
 impl Default for PathPreferences {
@@ -18,6 +19,7 @@ impl Default for PathPreferences {
       video_download_dir: None,
       video_directory_template: "".to_string(),
       audio_directory_template: "".to_string(),
+      ask_download_location: false,
     }
   }
 }

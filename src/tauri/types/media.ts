@@ -96,6 +96,13 @@ export type OutputOverrides = {
   audioFileNameTemplate?: string;
   restrictFilenames?: boolean;
   partialDownload?: PartialDownload;
+  saveAs?: SaveAsChoice;
+};
+
+/** Where the user chose to save a download: a file for one video, a folder for several. */
+export type SaveAsChoice = {
+  filePath?: string;
+  dir?: string;
 };
 
 export type Section = {

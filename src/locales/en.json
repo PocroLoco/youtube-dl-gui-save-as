@@ -417,6 +417,12 @@
       "label": "Download location",
       "hint": "Click in the box to select where videos get downloaded to."
     },
+    "askDownloadLocation": {
+      "label": "Ask where to save each download",
+      "hint": "When you start a download, a \"Save as\" window opens first so you can name the file and choose where it goes, like in a browser. Playlists ask for a folder.",
+      "dialogTitle": "Save download as",
+      "folderDialogTitle": "Choose where to save these downloads"
+    },
     "directory": {
       "legend": "Organise by",
       "legendLabel": "Select how downloads get organised in folders.",

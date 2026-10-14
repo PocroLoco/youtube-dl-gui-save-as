@@ -22,6 +22,18 @@
           directory
       />
       <p class="label text-sm mb-4">{{ t('location.downloadDir.hint') }}</p>
+      <div class="mb-4 flex flex-col gap-1">
+        <label class="font-semibold" for="ask-download-location">
+          {{ t('location.askDownloadLocation.label') }}
+        </label>
+        <input
+            id="ask-download-location"
+            v-model="preferencesDraft.paths.askDownloadLocation"
+            type="checkbox"
+            class="toggle toggle-primary my-1"
+        />
+        <p class="label text-sm whitespace-normal">{{ t('location.askDownloadLocation.hint') }}</p>
+      </div>
       <div class="divider my-2"/>
       <preferences-directory
           v-model="preferencesDraft"

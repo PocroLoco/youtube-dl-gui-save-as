@@ -5,6 +5,7 @@ export interface PathPreferences {
   videoDownloadDir: string | null;
   videoDirectoryTemplate: string | null;
   audioDirectoryTemplate: string | null;
+  askDownloadLocation: boolean;
 }
 
 export const defaultPathPreferences: PathPreferences = {
@@ -12,6 +13,7 @@ export const defaultPathPreferences: PathPreferences = {
   videoDownloadDir: null,
   videoDirectoryTemplate: null,
   audioDirectoryTemplate: null,
+  askDownloadLocation: false,
 };
 
 export interface RecentPreferences {

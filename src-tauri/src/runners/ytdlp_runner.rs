@@ -253,10 +253,9 @@ impl<'a> YtdlpRunner<'a> {
     template_context: &TemplateContext,
     overrides: Option<&DownloadOverrides>,
   ) -> Self {
-    let output_settings = resolve_with_patch(
-      &self.cfg.output,
-      overrides.and_then(|value| value.output.as_ref()),
-    );
+    let output_overrides = overrides.and_then(|value| value.output.as_ref());
+    let output_settings = resolve_with_patch(&self.cfg.output, output_overrides);
+    let save_as = output_overrides.and_then(|value| value.save_as.as_ref());
     let fallback_dir = self
       .app
       .path()
@@ -267,6 +266,7 @@ impl<'a> YtdlpRunner<'a> {
       template_context,
       &output_settings,
       &self.prefs.paths,
+      save_as,
       fallback_dir,
     ));
     self
