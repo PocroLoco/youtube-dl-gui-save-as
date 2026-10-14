@@ -71,8 +71,15 @@ pub fn run() {
     .setup(|app| {
       let handle = app.handle();
 
+      // Fork builds don't send crash reports to the original project's Sentry
+      // (an empty DSN turns the client off).
+      let sentry_dsn = if commands::updater::FORK_BUILD {
+        ""
+      } else {
+        "https://e5ff83f3c84f397db516955ec278c4c6@o762792.ingest.us.sentry.io/4510256640884736"
+      };
       let sentry_client = sentry::init((
-        "https://e5ff83f3c84f397db516955ec278c4c6@o762792.ingest.us.sentry.io/4510256640884736",
+        sentry_dsn,
         sentry::ClientOptions {
           traces_sample_rate: 0.05,
           sample_rate: 0.25,

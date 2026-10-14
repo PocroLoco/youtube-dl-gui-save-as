@@ -1,3 +1,11 @@
+> [!NOTE]
+> **This is a fork of [Open Video Downloader](https://github.com/jely2002/youtube-dl-gui) by Jelle Glebbeek** that adds one thing: a browser-style **"Save as"** window.
+> Turn on **Download location → Ask where to save each download**, and every download asks where to save it (name, folder, new folder) *before* it starts, then downloads straight there. Playlists ask for a folder.
+>
+> **Mac download:** grab the `.dmg` from the [Mac build release](../../releases/tag/mac-build). It isn't signed with an Apple developer certificate, so the first time you open it, right-click the app → **Open** (or allow it in System Settings → Privacy & Security).
+>
+> This fork doesn't auto-update or send crash reports to the original project. Everything else below is the original README.
+
 <img src="https://raw.githubusercontent.com/jely2002/youtube-dl-gui/v2.0.0/renderer/img/icon.png" alt="logo" align="left" height="100"/>
 
 # Open Video Downloader (youtube-dl-gui) <br> ![version badge](https://img.shields.io/github/v/release/jely2002/youtube-dl-gui?label=latest-release) ![GitHub](https://img.shields.io/github/license/jely2002/youtube-dl-gui) ![downloads](https://img.shields.io/github/downloads/jely2002/youtube-dl-gui/total) 

@@ -1,0 +1,12 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "targets": ["app", "dmg"],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  }
+}

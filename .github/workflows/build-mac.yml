@@ -1,0 +1,78 @@
+name: 'Build Mac app'
+
+# Builds a universal (Apple Silicon + Intel) .dmg of this fork and publishes it
+# as the "Mac build" release, so the newest build is always one download away.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'src-isolation/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/build-mac.yml'
+
+concurrency:
+  group: build-mac
+  cancel-in-progress: true
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: setup node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: install Rust 1.94.1
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # rust-toolchain action
+        with:
+          toolchain: 1.94.1
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build universal app
+        run: npx tauri build --target universal-apple-darwin --config src-tauri/tauri.fork-mac.conf.json
+
+      - name: Collect the .dmg
+        id: dmg
+        run: |
+          src=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          version=$(node -p "require('./package.json').version")
+          out="Open-Video-Downloader-Save-As_${version}_mac-universal.dmg"
+          cp "$src" "$out"
+          echo "file=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mac-dmg
+          path: ${{ steps.dmg.outputs.file }}
+
+      - name: Publish "Mac build" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete mac-build --yes --cleanup-tag || true
+          gh release create mac-build "${{ steps.dmg.outputs.file }}" \
+            --target "$GITHUB_SHA" \
+            --title "Mac build" \
+            --notes "Latest Mac build of this fork (Apple Silicon and Intel), built from ${GITHUB_SHA::7}.
+
+          Not signed with an Apple developer certificate, so the first time you open it: right-click the app → Open, or allow it in System Settings → Privacy & Security."
