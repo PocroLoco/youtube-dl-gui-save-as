@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import { i18n } from '../../i18n';
 import { usePreferencesStore } from '../preferences';
 import { useSettingsStore } from '../settings';
@@ -80,12 +81,17 @@ export const useMediaSaveAsStore = defineStore('media-save-as', () => {
 
   async function bringWindowForward(): Promise<void> {
     try {
-      const appWindow = getCurrentWindow();
-      await appWindow.unminimize();
-      await appWindow.show();
-      await appWindow.setFocus();
-    } catch (e) {
-      console.warn('Could not focus window for save dialog', e);
+      // Also un-hides the app on macOS (after a browser download stepped back).
+      await invoke('bring_window_forward');
+    } catch {
+      try {
+        const appWindow = getCurrentWindow();
+        await appWindow.unminimize();
+        await appWindow.show();
+        await appWindow.setFocus();
+      } catch (e) {
+        console.warn('Could not focus window for save dialog', e);
+      }
     }
   }
 
@@ -108,16 +114,27 @@ export const useMediaSaveAsStore = defineStore('media-save-as', () => {
       return { filePath };
     }
 
+    return pickFolder(options.trackType);
+  }
+
+  async function pickFolder(trackType: TrackType): Promise<SaveAsChoice | null> {
     const folder = await open({
       title: i18n.global.t('location.askDownloadLocation.folderDialogTitle'),
       directory: true,
       multiple: false,
       canCreateDirectories: true,
-      defaultPath: dir,
+      defaultPath: startDir(trackType),
     });
     if (typeof folder !== 'string' || folder.length === 0) return null;
     await preferencesStore.addRecentPath(SAVE_AS_RECENTS_KEY, folder);
     return { dir: folder };
+  }
+
+  /** Runs one dialog at a time, in the order they were asked for. */
+  function enqueuePrompt<T>(run: () => Promise<T>): Promise<T> {
+    const result = promptQueue.then(run, run);
+    promptQueue = result.catch(() => undefined);
+    return result;
   }
 
   /**
@@ -126,22 +143,36 @@ export const useMediaSaveAsStore = defineStore('media-save-as', () => {
    */
   function askWhereToSave(group: Group, items: MediaItem[], options: DownloadOptions): Promise<SaveAsChoice | null> {
     prompting.add(group.id);
-    const run = () => prompt(group, items, options);
-    const result = promptQueue.then(run, run).then((choice) => {
+    return enqueuePrompt(() => prompt(group, items, options)).then((choice) => {
       if (choice) choices.set(group.id, choice);
       return choice;
     }).finally(() => {
       prompting.delete(group.id);
     });
-    promptQueue = result.catch(() => undefined);
-    return result;
+  }
+
+  /**
+   * Asks for one folder for several downloads at once (a playlist sent from
+   * the browser). Returns null when the user cancels.
+   */
+  function askForFolder(trackType: TrackType): Promise<SaveAsChoice | null> {
+    return enqueuePrompt(async () => {
+      await bringWindowForward();
+      return pickFolder(trackType);
+    });
+  }
+
+  function setChoice(groupId: string, choice: SaveAsChoice): void {
+    choices.set(groupId, choice);
   }
 
   return {
     isEnabled,
     isPrompting,
     getChoice,
+    setChoice,
     forget,
     askWhereToSave,
+    askForFolder,
   };
 });

@@ -1,4 +1,5 @@
 mod binaries;
+mod bridge;
 mod commands;
 mod i18n;
 mod logging;
@@ -65,9 +66,17 @@ pub fn run() {
       MacosLauncher::LaunchAgent,
       Some(vec!["--auto-start"]),
     ))
-    .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-      reopen_window(app)
+    .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+      // A second launch that only carries a browser link (Windows/Linux) is
+      // handled by the link itself; don't pop the window up for it.
+      let is_link = args
+        .get(1)
+        .is_some_and(|arg| arg.starts_with(&format!("{}:", bridge::LINK_SCHEME)));
+      if !is_link {
+        reopen_window(app)
+      }
     }))
+    .plugin(tauri_plugin_deep_link::init())
     .setup(|app| {
       let handle = app.handle();
 
@@ -165,6 +174,9 @@ pub fn run() {
       // register shortcuts
       register_shortcuts(handle);
 
+      // browser extension: local bridge + ovd-save-as:// links
+      setup_browser_bridge(handle);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -194,6 +206,10 @@ pub fn run() {
       stronghold_set,
       get_platform,
       notify,
+      bridge::bridge_take_pending,
+      bridge::bridge_status_set,
+      bridge::bridge_step_back,
+      bridge::bring_window_forward,
     ])
     .build(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -277,7 +293,38 @@ pub fn init_autostart(app: &AppHandle) {
   }
 }
 
-pub fn reopen_window(app: &AppHandle) {
+fn setup_browser_bridge(app: &AppHandle) {
+  use tauri_plugin_deep_link::DeepLinkExt;
+
+  app.manage(bridge::BridgeState::default());
+  bridge::start(app);
+
+  // Installers register the link type; this also covers AppImages and
+  // copies that were moved or never installed.
+  #[cfg(any(windows, target_os = "linux"))]
+  if let Err(error) = app.deep_link().register_all() {
+    tracing::warn!("[bridge] couldn't register links: {error}");
+  }
+
+  let link_handle = app.clone();
+  app.deep_link().on_open_url(move |event| {
+    for link in event.urls() {
+      bridge::handle_link(&link_handle, &link);
+    }
+  });
+  // Started by a link while closed.
+  if let Ok(Some(links)) = app.deep_link().get_current() {
+    for link in links {
+      bridge::handle_link(app, &link);
+    }
+  }
+}
+
+pub fn reopen_window<R: tauri::Runtime>(app: &AppHandle<R>) {
+  // A hidden app (e.g. after a browser download stepped back) keeps its
+  // windows invisible until it's un-hidden.
+  #[cfg(target_os = "macos")]
+  let _ = app.show();
   let Some(window) = app.get_webview_window("main") else {
     return;
   };

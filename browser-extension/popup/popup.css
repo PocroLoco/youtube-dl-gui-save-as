@@ -1,0 +1,72 @@
+body { width: 360px; }
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+header img { border-radius: 5px; }
+.heading { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.heading strong { font-size: 13px; }
+.connection { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.connection.on .dot { background: var(--success); }
+.connection.off .dot { background: var(--danger); }
+header button { padding: 5px 10px; font-size: 12px; }
+
+.page { padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.page-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page-actions { display: flex; gap: 8px; }
+.page-actions button { flex: 1; }
+.page-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.page-unavailable { margin: 0; padding: 12px 14px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); }
+
+.downloads { padding: 10px 6px 8px; }
+.downloads h2 {
+  margin: 0 8px 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+ul { list-style: none; margin: 0; padding: 0; max-height: 330px; overflow-y: auto; }
+li {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 10px;
+}
+li.openable { cursor: pointer; }
+li.openable:hover { background: var(--hover); }
+.thumb {
+  width: 64px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--track);
+  display: block;
+}
+.thumb.placeholder { object-fit: contain; padding: 7px 0; box-sizing: border-box; }
+.info { min-width: 0; }
+.title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+li.error .status { color: var(--danger); }
+li.done .status { color: var(--success); }
+.bar { height: 4px; border-radius: 2px; background: var(--track); margin-top: 6px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); width: 0; transition: width 0.4s ease; }
+.bar.indeterminate > span { width: 35%; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.item-actions { display: flex; gap: 4px; }
+.icon-button { padding: 5px; border-radius: 7px; background: transparent; border-color: transparent; color: var(--muted); }
+.icon-button:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
+.empty { margin: 4px 8px 6px; color: var(--muted); }

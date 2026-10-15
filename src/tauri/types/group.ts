@@ -34,5 +34,7 @@ export type Group = {
   playlistUploader?: string;
   playlistUploaderId?: string;
   fromShortcut?: boolean;
+  /** Sent from the browser extension, which shows its own notifications. */
+  fromBrowser?: boolean;
   skipPlaylistSelection?: boolean;
 };

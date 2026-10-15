@@ -20,6 +20,7 @@ import { createSentry } from './sentry.ts';
 import { startWindowWatcher } from './tauri/window.ts';
 import { usePreferencesStore } from './stores/preferences.ts';
 import { useMediaStore } from './stores/media/media.ts';
+import { startBrowserBridge } from './tauri/listeners/bridge.ts';
 
 const pinia = createPinia();
 pinia.use(createSentryPiniaPlugin());
@@ -73,6 +74,11 @@ initStores().catch((e) => {
     startWindowWatcher();
   }
   app.mount('#app');
+  if (!__E2E__) {
+    startBrowserBridge().catch((e) => {
+      console.error('Browser extension bridge failed to start', e);
+    });
+  }
 });
 
 async function initStores(): Promise<void> {

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Starting Open Video Downloader</title>
+  <link rel="stylesheet" href="../popup/theme.css">
+  <link rel="stylesheet" href="launch.css">
+</head>
+<body>
+  <main class="card" id="card">
+    <img class="logo" src="../icons/icon-128.png" alt="" width="64" height="64">
+    <h1 id="title">Starting Open Video Downloader…</h1>
+    <p id="message">If Chrome asks, click <strong>Open Open Video Downloader</strong>. Tick <strong>Always allow</strong> so it starts by itself next time.</p>
+    <div class="spinner" id="spinner" aria-hidden="true"></div>
+    <div class="actions" id="actions" hidden>
+      <button class="primary" id="retry" type="button">Try again</button>
+      <a class="button" id="get-app" target="_blank" rel="noopener">Get the app</a>
+    </div>
+    <p class="hint" id="hint" hidden>Works with the <strong>Open Video Downloader (Save As)</strong> app. On a Mac, open it once from Applications first (System Settings → Privacy &amp; Security → Open Anyway).</p>
+  </main>
+  <script type="module" src="launch.js"></script>
+</body>
+</html>

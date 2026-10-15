@@ -201,6 +201,7 @@ export const useMediaStore = defineStore('media', () => {
     url: string,
     fromShortcut: boolean = false,
     skipPlaylistSelection: boolean = false,
+    fromBrowser: boolean = false,
   ) {
     const id = uuidv4();
     const groupId = uuidv4();
@@ -220,6 +221,7 @@ export const useMediaStore = defineStore('media', () => {
       formats: [],
       filesize: 0,
       fromShortcut,
+      fromBrowser: fromBrowser || undefined,
       skipPlaylistSelection,
       items: {
         [id]: {
@@ -292,9 +294,10 @@ export const useMediaStore = defineStore('media', () => {
     urls: string[],
     fromShortcut: boolean = false,
     skipPlaylistSelection: boolean = false,
+    fromBrowser: boolean = false,
   ): Promise<string[]> {
     return await Promise.all(
-      urls.map(url => dispatchMediaInfoFetch(url, fromShortcut, skipPlaylistSelection)),
+      urls.map(url => dispatchMediaInfoFetch(url, fromShortcut, skipPlaylistSelection, fromBrowser)),
     );
   }
 
@@ -498,6 +501,8 @@ export const useMediaStore = defineStore('media', () => {
     addAndDownload,
     addUrlBatch,
     addUrlBatchAndDownload,
+    waitForGroupReady,
+    getDownloadOptions,
     downloadGroup,
     downloadAllGroups,
     pauseAllGroups,

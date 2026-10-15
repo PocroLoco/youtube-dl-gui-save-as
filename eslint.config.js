@@ -39,6 +39,15 @@ export default [
   },
   ...vue.configs['flat/essential'],
   {
+    // The browser extension is plain modern JavaScript (no build step).
+    files: ['browser-extension/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
+    },
+  },
+  {
     files: ['**/*.vue'],
     languageOptions: {
       parser: vueParser,

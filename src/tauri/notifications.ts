@@ -8,6 +8,8 @@ export async function notifyGroup(
   extraParams: Record<string, string> = {},
   count?: number,
 ): Promise<void> {
+  // The browser extension tells you about its own downloads.
+  if (group.fromBrowser) return;
   const params: Record<string, string> = {
     title: group.title ?? group.url,
     ...extraParams,
