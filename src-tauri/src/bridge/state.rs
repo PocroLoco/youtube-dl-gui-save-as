@@ -103,6 +103,10 @@ pub struct BridgeItem {
   pub duration: Option<f64>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub uploader: Option<String>,
+  /// Still in the browser's picker (not a real download yet): the popup's
+  /// download list leaves these out.
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  pub pending: bool,
   /// While waiting for the browser: the formats to pick from.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub choices: Option<serde_json::Value>,

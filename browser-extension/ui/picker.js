@@ -50,6 +50,19 @@ function preselect(options, track, saved) {
 }
 
 /**
+ * Some videos come without a quality list (a plain video file, or a site
+ * that doesn't say). Offer "Best available" so video is still an option,
+ * unless it's clearly audio (it lists audio bitrates and no video).
+ */
+function withVideoFallback(choices) {
+  const video = choices?.video ?? [];
+  const audio = choices?.audio ?? [{ label: 'Best' }];
+  const audioOnlySource = audio.some(option => option.abr != null);
+  if (video.length || audioOnlySource) return { video, audio };
+  return { video: [{ label: 'Best available' }], audio };
+}
+
+/**
  * Shows the picker in `root` for `url`.
  * - onPicked(requestId): a format was sent to the app.
  * - onAppMissing(): the app isn't running (the host decides how to start it).
@@ -64,6 +77,7 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
   let track = 'both';
   let selected = null;
   let choices = null;
+  let fallbackUrl = null;
   let lastRendered = '';
   let destroyed = false;
 
@@ -108,7 +122,10 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     thumb.referrerPolicy = 'no-referrer';
     if (item.thumbnail && /^https:\/\//.test(item.thumbnail)) thumb.src = item.thumbnail;
     else thumb.classList.add('empty');
-    thumb.addEventListener('error', () => thumb.classList.add('empty'), { once: true });
+    thumb.addEventListener('error', () => {
+      thumb.removeAttribute('src');
+      thumb.classList.add('empty');
+    }, { once: true });
     const meta = el('div', 'picker-meta');
     const name = el('div', 'picker-title', item.title ?? title ?? url);
     name.title = name.textContent;
@@ -210,23 +227,30 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     if (!item) return;
     if (item.state === 'pick' && item.choices) {
       if (lastRendered !== 'pick') {
-        choices = item.choices;
+        choices = withVideoFallback(item.choices);
         if (saved?.trackType && optionsFor(saved.trackType).length) track = saved.trackType;
         else if (!choices.video.length) track = 'audio';
         selected = preselect(optionsFor(track), track, saved);
         renderPicker(item);
       }
     } else if (item.state === 'error') {
+      if (fallbackUrl) {
+        // The tidied-up link didn't work; try the page's own link.
+        const retryWith = fallbackUrl;
+        fallbackUrl = null;
+        void start({ url: retryWith, exact: true });
+        return;
+      }
       if (lastRendered !== 'problem') {
         showProblem('No video found here', item.error ? item.error.replace(/^ERROR:\s*/, '') : 'This page may not have a video Open Video Downloader can get.');
       }
     }
   }
 
-  async function start() {
+  async function start(target = { url }) {
     showLoading('Getting formats…');
     saved = await lastChoice();
-    const result = await send({ type: 'prepare', url, title });
+    const result = await send({ type: 'prepare', url: target.url, title, exact: target.exact });
     if (destroyed) return;
     if (result?.needsLaunch) {
       showProblem('Open Video Downloader isn’t running', null, { retry: false });
@@ -239,6 +263,7 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     }
     if (port) port.disconnect();
     requestId = result.requestId;
+    if (!target.exact) fallbackUrl = result.fallbackUrl ?? null;
     // While this is open the app keeps the formats; closing it lets the app drop them.
     port = chrome.runtime.connect({ name: `picker:${requestId}` });
     port.onMessage.addListener((message) => {

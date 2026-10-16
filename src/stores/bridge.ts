@@ -306,6 +306,7 @@ export const useBridgeStore = defineStore('bridge', () => {
       duration: group.duration,
       uploader: group.uploader,
       state,
+      pending: group.hidden || undefined,
     };
 
     if (state === 'pick') {

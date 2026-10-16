@@ -406,6 +406,7 @@ fn choices_reach_the_extension() {
     id: "g1".into(),
     request_id: Some("r-pick".into()),
     state: "pick".into(),
+    pending: true,
     choices: Some(
       serde_json::json!({ "video": [{ "height": 1080, "fps": 60, "label": "1080p60" }] }),
     ),
@@ -416,6 +417,7 @@ fn choices_reach_the_extension() {
     .unwrap();
   assert_eq!(body["items"][0]["state"], "pick");
   assert_eq!(body["items"][0]["choices"]["video"][0]["label"], "1080p60");
+  assert_eq!(body["items"][0]["pending"], true);
 }
 
 #[test]

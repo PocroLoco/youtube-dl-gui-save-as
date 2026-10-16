@@ -49,7 +49,7 @@ function offerToStart() {
     text('p', 'page-title', activeTab?.title || pageUrl),
     text('p', '', 'Open Video Downloader isn’t running. Start it and pick the format there.'),
     button('Start and download', async () => {
-      await send({ type: 'open-picker-window', url: pageUrl, title: activeTab?.title });
+      await send({ type: 'open-picker-window', url: activeTab?.url ?? pageUrl, title: activeTab?.title });
       window.close();
     }, 'primary'),
   );
@@ -58,7 +58,8 @@ function offerToStart() {
 function showPicker() {
   picker?.destroy();
   picker = mountPicker($('page'), {
-    url: pageUrl,
+    // The tab's own link; the extension tidies it up (and can fall back to it).
+    url: activeTab?.url ?? pageUrl,
     title: activeTab?.title,
     onAppMissing: offerToStart,
   });
@@ -152,7 +153,7 @@ function render({ connected, items, info }) {
   const list = $('list');
   list.replaceChildren();
   // The page being picked right now is shown above, not in the list.
-  const shown = (items ?? []).filter(item => item.state !== 'pick').slice(0, 20);
+  const shown = (items ?? []).filter(item => item.state !== 'pick' && !item.pending).slice(0, 20);
   $('empty').hidden = shown.length > 0;
   $('empty').textContent = connected ? 'Nothing downloading yet.' : 'Nothing to show while the app is closed.';
 

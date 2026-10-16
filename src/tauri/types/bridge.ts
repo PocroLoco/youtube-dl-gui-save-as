@@ -63,4 +63,6 @@ export type BridgeItem = {
   path?: string;
   error?: string;
   choices?: BridgeChoices;
+  /** Still in the browser's picker; not a real download yet. */
+  pending?: boolean;
 };

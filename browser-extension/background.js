@@ -218,15 +218,19 @@ async function unfollow(requestId) {
  * Has the app read the video's formats. Returns { ok, requestId }, or
  * { needsLaunch: true } when the app isn't running.
  */
-async function prepare({ url, title }) {
-  const clean = cleanVideoUrl(url);
+async function prepare({ url, title, exact }) {
+  // `exact`: use the page's own link as-is (when the tidied-up one didn't work).
+  const clean = exact ? url : cleanVideoUrl(url);
   if (!clean || !isDownloadablePage(clean)) return { ok: false, error: 'This page can’t be downloaded.' };
+  // Rumble Shorts get rewritten to the regular video link; if that ever fails,
+  // the picker retries with the Shorts link itself.
+  const fallbackUrl = !exact && /^https?:\/\/(www\.)?rumble\.com\/shorts\//.test(url) ? url : undefined;
 
   const reuse = requestForUrl.get(clean);
   if (reuse && cancelTimers.has(reuse)) {
     clearTimeout(cancelTimers.get(reuse));
     cancelTimers.delete(reuse);
-    return { ok: true, requestId: reuse };
+    return { ok: true, requestId: reuse, fallbackUrl };
   }
 
   const requestId = crypto.randomUUID();
@@ -236,7 +240,7 @@ async function prepare({ url, title }) {
     if (!result?.ok) throw new Error(result?.error ?? 'The app said no.');
     requestForUrl.set(clean, requestId);
     void keepWatching();
-    return { ok: true, requestId };
+    return { ok: true, requestId, fallbackUrl };
   } catch (e) {
     await unfollow(requestId);
     if (e instanceof AppNotRunning) return { ok: false, needsLaunch: true };

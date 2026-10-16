@@ -94,6 +94,12 @@ export function cleanVideoUrl(raw) {
         : `https://www.youtube.com/watch?v=${short[2]}`;
     }
   }
+  // yt-dlp doesn't know Rumble's Shorts links yet, but the same video at
+  // rumble.com/<id> works (with every quality).
+  if (host === 'rumble.com') {
+    const short = url.pathname.match(/^\/shorts\/(v[\w-]+)/);
+    if (short) return `https://rumble.com/${short[1]}`;
+  }
   if (host === 'youtu.be') {
     const id = url.pathname.slice(1).split('/')[0];
     if (id) return `https://www.youtube.com/watch?v=${id}`;
@@ -118,7 +124,7 @@ const VIDEO_PAGES = [
   [/(^|\.)soundcloud\.com$/, /^\/[^/]+\/[^/]+/],
   [/(^|\.)bilibili\.com$/, /^\/video\//],
   [/(^|\.)streamable\.com$/, /^\/\w+/],
-  [/(^|\.)rumble\.com$/, /^\/v\w/],
+  [/(^|\.)rumble\.com$/, /^\/(v\w|shorts\/v\w)/],
 ];
 
 /** True for pages that are clearly a single video (YouTube watch/shorts, TikTok, …). */

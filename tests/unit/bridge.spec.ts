@@ -213,7 +213,7 @@ describe('picking the format in the browser', () => {
     const item = bridgeStore.snapshot().find(i => i.requestId === 'r-pick');
     expect(item?.choices?.video.map(c => c.label)).toEqual(['1080p60', '1080p30', '720p']);
     expect(item?.choices?.audio.map(c => c.label)).toEqual(['Best', '160kbps', '128kbps']);
-    expect(item).toMatchObject({ title: 'Cats: The Movie', uploader: 'Cat Channel', duration: 95 });
+    expect(item).toMatchObject({ title: 'Cats: The Movie', uploader: 'Cat Channel', duration: 95, pending: true });
     // Not in the app's list (or its "Download all") until a format is picked.
     expect(groupStore.orderedGroups.some(g => g.url.includes('youtube.com'))).toBe(false);
     expect(dialogs).toHaveLength(0);
@@ -227,6 +227,19 @@ describe('picking the format in the browser', () => {
     expect(downloads[0].items[0].format).toMatchObject({ trackType: TrackType.both, height: 720, id: '22' });
     expect(downloads[0].items[0].overrides?.output?.saveAs).toEqual({ filePath: '/Users/me/Movies/cats.mp4' });
     expect(groupStore.orderedGroups.some(g => g.url.includes('youtube.com'))).toBe(true);
+    expect(bridgeStore.snapshot().find(i => i.requestId === 'r-pick')?.pending).toBeUndefined();
+  });
+
+  it('picks the best video when the browser asks for "Best available"', async () => {
+    const { commands, downloads, bridgeStore } = setup(['/Users/me/Movies/cats.mp4']);
+    const running = bridgeStore.handleRequest(request({ requestId: 'r-best', chooseFormat: true }));
+    await waitFor(() => bridgeStore.snapshot().some(i => i.requestId === 'r-best' && i.state === 'pick'));
+
+    commands.push({ kind: 'choose', requestId: 'r-best', trackType: TrackType.both });
+    await bridgeStore.drain();
+    await running;
+
+    expect(downloads[0].items[0].format).toMatchObject({ trackType: TrackType.both, height: 1080, fps: 60 });
   });
 
   it('downloads the picked audio quality', async () => {
