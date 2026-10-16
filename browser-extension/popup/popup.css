@@ -1,4 +1,4 @@
-body { width: 360px; }
+body { width: 380px; }
 header {
   display: flex;
   align-items: center;
@@ -16,18 +16,11 @@ header img { border-radius: 5px; }
 .connection.off .dot { background: var(--danger); }
 header button { padding: 5px 10px; font-size: 12px; }
 
-.page { padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.page-title {
-  font-weight: 600;
-  margin-bottom: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.page-actions { display: flex; gap: 8px; }
-.page-actions button { flex: 1; }
-.page-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
-.page-unavailable { margin: 0; padding: 12px 14px; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); }
+.page { padding: 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.page-message { display: flex; flex-direction: column; gap: 10px; }
+.page-message p { margin: 0; color: var(--muted); line-height: 1.45; }
+.page-message .page-title { font-weight: 650; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-message button { align-self: flex-start; }
 
 .downloads { padding: 10px 6px 8px; }
 .downloads h2 {

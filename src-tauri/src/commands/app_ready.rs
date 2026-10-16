@@ -10,6 +10,10 @@ pub fn app_ready(app: AppHandle, cfg_handle: State<'_, SharedConfig>) {
   if cfg.system.auto_start_minimised && is_autostart {
     return;
   }
+  // Started by the browser extension: stay out of sight until "Save as".
+  if crate::bridge::started_in_background(&app) {
+    return;
+  }
 
   app.get_webview_window("main").unwrap().show().unwrap();
   #[cfg(target_os = "macos")]

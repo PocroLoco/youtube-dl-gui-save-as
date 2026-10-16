@@ -6,12 +6,16 @@
 //!   download along, so the first click still works.
 //!
 //! Requests from either path land in one queue that the app's window drains.
-//! Browser downloads always ask where to save ("Save as") before they start.
+//! The extension first has the app read the video's formats, lets you pick one
+//! in the browser, and the app then asks where to save ("Save as") and
+//! downloads straight there.
 
 mod http;
 mod state;
 
-pub use state::{BridgeItem, BridgeRequest, BridgeState, EnqueueResult};
+pub use state::{
+  BridgeChoice, BridgeCommand, BridgeItem, BridgeRequest, BridgeState, EnqueueResult,
+};
 
 use http::BridgeHost;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -63,11 +67,13 @@ pub enum LinkAction {
     request_id: String,
     audio_only: bool,
   },
+  /// Just start the app, in the background (the extension takes it from there).
+  Start,
   Show,
 }
 
-/// Understands `ovd-save-as://download?url=…&id=…&audio=1` and
-/// `ovd-save-as://open`.
+/// Understands `ovd-save-as://download?url=…&id=…&audio=1`,
+/// `ovd-save-as://start` and `ovd-save-as://open`.
 pub fn parse_link(link: &url::Url) -> Option<LinkAction> {
   if link.scheme() != LINK_SCHEME {
     return None;
@@ -91,6 +97,7 @@ pub fn parse_link(link: &url::Url) -> Option<LinkAction> {
         audio_only,
       })
     }
+    "start" => Some(LinkAction::Start),
     "open" | "show" | "" => Some(LinkAction::Show),
     _ => None,
   }
@@ -123,14 +130,47 @@ pub fn handle_link<R: Runtime>(app: &AppHandle<R>, link: &url::Url) {
         audio_only,
         window_was_visible,
         window_was_focused,
+        choose_format: false,
       }) == EnqueueResult::Queued
       {
         let _ = app.emit(PENDING_EVENT, ());
       }
     }
+    Some(LinkAction::Start) => {}
     Some(LinkAction::Show) => crate::reopen_window(app),
     None => tracing::warn!("[bridge] ignoring link {link}"),
   }
+}
+
+/// True when the app was started by the browser extension (not by you), so it
+/// can stay out of sight until there's a "Save as" to show.
+pub fn started_in_background<R: Runtime>(app: &AppHandle<R>) -> bool {
+  use tauri_plugin_deep_link::DeepLinkExt;
+  app
+    .try_state::<tauri_plugin_deep_link::DeepLink<R>>()
+    .and_then(|_| app.deep_link().get_current().ok().flatten())
+    .is_some_and(|links| {
+      links.iter().any(|link| {
+        matches!(
+          parse_link(link),
+          Some(LinkAction::Start | LinkAction::Download { .. })
+        )
+      })
+    })
+}
+
+/// Checks a format picked in the browser before it reaches the app.
+pub fn validate_choice(choice: &BridgeChoice) -> bool {
+  let id_ok = normalize_request_id(Some(&choice.request_id)) == choice.request_id;
+  let track_ok = matches!(choice.track_type.as_str(), "both" | "audio" | "video");
+  let height_ok = choice.height.is_none_or(|h| (1..=10_000).contains(&h));
+  let fps_ok = choice
+    .fps
+    .is_none_or(|f| f.is_finite() && (0.0..=1_000.0).contains(&f));
+  let abr_ok = choice
+    .abr
+    .is_none_or(|a| a.is_finite() && (0.0..=10_000.0).contains(&a));
+  id_ok && track_ok && height_ok && fps_ok && abr_ok
 }
 
 struct AppBridgeHost<R: Runtime> {
@@ -199,7 +239,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
 
 /// The app's window picks up waiting browser requests.
 #[tauri::command]
-pub fn bridge_take_pending(state: tauri::State<'_, BridgeState>) -> Vec<BridgeRequest> {
+pub fn bridge_take_pending(state: tauri::State<'_, BridgeState>) -> Vec<BridgeCommand> {
   state.take_pending()
 }
 

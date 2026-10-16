@@ -69,13 +69,9 @@ export async function api(path, body) {
   throw new AppNotRunning();
 }
 
-/** A link that starts the app (when it's closed) and hands it the download. */
-export function downloadLink({ url, requestId, audioOnly }) {
-  const params = new URLSearchParams({ url, id: requestId });
-  if (audioOnly) params.set('audio', '1');
-  return `${LINK_SCHEME}://download?${params}`;
-}
-
+/** Starts the app in the background (it stays hidden until "Save as"). */
+export const START_APP_LINK = `${LINK_SCHEME}://start`;
+/** Starts the app (if needed) and shows its window. */
 export const OPEN_APP_LINK = `${LINK_SCHEME}://open`;
 
 /** Trims a YouTube link down to just the video (no playlist, timestamp, etc.). */
@@ -91,7 +87,7 @@ export function cleanVideoUrl(raw) {
   if (host === 'youtube.com') {
     const v = url.searchParams.get('v');
     if (url.pathname === '/watch' && v) return `https://www.youtube.com/watch?v=${v}`;
-    const short = url.pathname.match(/^\/(shorts|live)\/([\w-]{6,})/);
+    const short = url.pathname.match(/^\/(shorts|live|embed)\/([\w-]{6,})/);
     if (short) {
       return short[1] === 'shorts'
         ? `https://www.youtube.com/shorts/${short[2]}`
@@ -103,6 +99,45 @@ export function cleanVideoUrl(raw) {
     if (id) return `https://www.youtube.com/watch?v=${id}`;
   }
   return url.toString();
+}
+
+// Video pages on sites people download from most. On these the popup reads
+// the formats as soon as it opens; on other sites it waits for a click.
+const VIDEO_PAGES = [
+  [/(^|\.)youtube\.com$/, /^\/(watch|shorts\/|live\/|embed\/)/],
+  [/^youtu\.be$/, /^\/[\w-]{6,}/],
+  [/(^|\.)vimeo\.com$/, /^\/(\d+|.+\/videos?\/\d+)/],
+  [/(^|\.)tiktok\.com$/, /\/video\/\d+/],
+  [/(^|\.)instagram\.com$/, /^\/(reels?|p|tv)\//],
+  [/(^|\.)(x|twitter)\.com$/, /\/status\/\d+/],
+  [/(^|\.)twitch\.tv$/, /^\/(videos\/\d+|[^/]+\/clip\/)/],
+  [/^clips\.twitch\.tv$/, /^\/\w/],
+  [/(^|\.)reddit\.com$/, /\/comments\//],
+  [/(^|\.)facebook\.com$/, /(\/watch|\/reel\/|\/videos\/)/],
+  [/(^|\.)dailymotion\.com$/, /^\/video\//],
+  [/(^|\.)soundcloud\.com$/, /^\/[^/]+\/[^/]+/],
+  [/(^|\.)bilibili\.com$/, /^\/video\//],
+  [/(^|\.)streamable\.com$/, /^\/\w+/],
+  [/(^|\.)rumble\.com$/, /^\/v\w/],
+];
+
+/** True for pages that are clearly a single video (YouTube watch/shorts, TikTok, …). */
+export function isKnownVideoPage(raw) {
+  try {
+    const url = new URL(raw);
+    return VIDEO_PAGES.some(([host, path]) => host.test(url.hostname) && path.test(url.pathname));
+  } catch {
+    return false;
+  }
+}
+
+export function formatDuration(seconds) {
+  if (!seconds || !Number.isFinite(seconds)) return '';
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
 
 /** Pages a download makes no sense for. */
@@ -142,6 +177,8 @@ export function describe(item) {
   switch (item.state) {
     case 'fetching':
       return 'Getting video info…';
+    case 'pick':
+      return 'Pick a format';
     case 'choosing':
       return 'Pick the videos in the app';
     case 'saveAs':

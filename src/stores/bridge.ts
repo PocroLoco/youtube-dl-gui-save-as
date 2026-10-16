@@ -8,16 +8,33 @@ import { useMediaDestinationStore } from './media/destination';
 import { useMediaDiagnosticsStore } from './media/diagnostics';
 import { useMediaOptionsStore } from './media/options';
 import { useMediaSaveAsStore } from './media/saveAs';
-import { DownloadOptions, SaveAsChoice, TrackType } from '../tauri/types/media';
-import { BridgeItem, BridgeItemState, BridgeRequest } from '../tauri/types/bridge';
+import { DownloadOptions, MediaFormat, SaveAsChoice, TrackType } from '../tauri/types/media';
+import {
+  BridgeChoice,
+  BridgeChoices,
+  BridgeCommand,
+  BridgeItem,
+  BridgeItemState,
+  BridgeRequest,
+} from '../tauri/types/bridge';
+import { approxAudio, approxVideo, sortFormats } from '../helpers/formats';
 
 const REPORT_INTERVAL_MS = 600;
 const MAX_REPORTED = 30;
 const CANCELLED_TTL_MS = 10 * 60 * 1000;
+// Same as "Best" in the app's own audio picker.
+const BEST_AUDIO: MediaFormat = Object.freeze({
+  id: 'best',
+  audioCodecs: [],
+  videoCodecs: [],
+  audioTrackIds: [],
+  videoTrackIds: [],
+});
 
 /**
- * Downloads sent from the browser extension: always "Save as" first, then
- * download straight there, and keep the extension posted on progress.
+ * Downloads sent from the browser extension: the extension shows the video's
+ * formats, you pick one in the browser, then "Save as" and the download goes
+ * straight there. The extension is kept posted on progress.
  */
 export const useBridgeStore = defineStore('bridge', () => {
   const mediaStore = useMediaStore();
@@ -31,6 +48,12 @@ export const useBridgeStore = defineStore('bridge', () => {
 
   const requestByGroup = new Map<string, string>();
   const waitingForSaveAs = new Set<string>();
+  const pickingGroups = new Set<string>();
+  const waitingForChoice = new Map<string, {
+    groupIds: string[];
+    resolve: (choice: BridgeChoice | null) => void;
+  }>();
+  const cancelledEarly = new Set<string>();
   const firstSeen = new Map<string, number>();
   const cancelled = new Map<string, BridgeItem & { at: number }>();
   let draining = false;
@@ -47,16 +70,40 @@ export const useBridgeStore = defineStore('bridge', () => {
     try {
       do {
         drainAgain = false;
-        const requests = await invoke<BridgeRequest[]>('bridge_take_pending');
-        for (const request of requests) {
-          void handleRequest(request).catch((e) => {
-            console.error('Browser download failed', e);
-          });
+        const commands = await invoke<BridgeCommand[]>('bridge_take_pending');
+        for (const command of commands ?? []) {
+          if (command.kind === 'download') {
+            void handleRequest(command).catch((e) => {
+              console.error('Browser download failed', e);
+            });
+          } else if (command.kind === 'choose') {
+            resolveChoice(command.requestId, command);
+          } else if (command.kind === 'cancel') {
+            resolveChoice(command.requestId, null);
+          }
         }
       } while (drainAgain);
     } finally {
       draining = false;
     }
+  }
+
+  /** A format picked in the browser (or null: the picker was closed). */
+  function resolveChoice(requestId: string, choice: BridgeChoice | null) {
+    const waiting = waitingForChoice.get(requestId);
+    if (waiting) {
+      waitingForChoice.delete(requestId);
+      waiting.resolve(choice);
+    } else if (!choice) {
+      // Closed while the formats were still loading.
+      cancelledEarly.add(requestId);
+    }
+  }
+
+  function waitForChoice(requestId: string, groupIds: string[]): Promise<BridgeChoice | null> {
+    return new Promise((resolve) => {
+      waitingForChoice.set(requestId, { groupIds, resolve });
+    });
   }
 
   function optionsFor(groupId: string, audioOnly: boolean): DownloadOptions {
@@ -65,30 +112,112 @@ export const useBridgeStore = defineStore('bridge', () => {
     return { trackType: TrackType.audio };
   }
 
+  /** Turns the browser's pick into the same options the app's own picker makes. */
+  function optionsFromChoice(groupId: string, choice: BridgeChoice): DownloadOptions {
+    const formats = groupStore.findGroupById(groupId)?.formats ?? [];
+    if (choice.trackType === TrackType.audio) {
+      const audio = formats.filter(format => format.abr);
+      const match = choice.abr == null
+        ? undefined
+        : audio.find(format => format.abr === choice.abr) ?? approxAudio(audio, choice.abr);
+      return { trackType: TrackType.audio, ...(match ?? BEST_AUDIO) };
+    }
+    const video = formats.filter(format => format.height);
+    const match = video.find(format => format.height === choice.height && (format.fps ?? undefined) === choice.fps)
+      ?? approxVideo(video, choice.height, choice.fps);
+    return { trackType: choice.trackType, ...(match ?? {}) };
+  }
+
+  /** The formats to offer in the browser, labelled like the app's own picker. */
+  function choicesFor(groupIds: string[]): BridgeChoices {
+    const formats = groupIds.flatMap(id => groupStore.findGroupById(id)?.formats ?? []);
+    const seenVideo = new Set<string>();
+    const video: BridgeChoices['video'] = [];
+    for (const format of sortFormats(formats.filter(f => f.height))) {
+      const key = `${format.height}|${format.fps ?? ''}`;
+      if (seenVideo.has(key)) continue;
+      seenVideo.add(key);
+      video.push({
+        height: format.height!,
+        fps: format.fps ?? undefined,
+        label: format.fps ? `${format.height}p${format.fps}` : `${format.height}p`,
+      });
+    }
+    const seenAudio = new Set<number>();
+    const audio: BridgeChoices['audio'] = [{ label: 'Best' }];
+    for (const format of sortFormats(formats.filter(f => f.abr))) {
+      if (seenAudio.has(format.abr!)) continue;
+      seenAudio.add(format.abr!);
+      audio.push({ abr: format.abr, label: `${format.abr}kbps` });
+    }
+    return { video, audio };
+  }
+
   function track(groupId: string, requestId: string) {
     requestByGroup.set(groupId, requestId);
     if (!firstSeen.has(groupId)) firstSeen.set(groupId, Date.now());
   }
 
+  /** Drops a browser download that didn't go ahead, leaving nothing behind. */
+  function discard(groupIds: string[]) {
+    for (const id of groupIds) {
+      if (groupStore.findGroupById(id)) mediaStore.deleteGroup(id);
+      requestByGroup.delete(id);
+      firstSeen.delete(id);
+    }
+  }
+
   async function handleRequest(request: BridgeRequest): Promise<void> {
-    const [groupId] = await mediaStore.addUrlBatch([request.url], false, true, true);
+    const picking = request.chooseFormat === true;
+    const [groupId] = await mediaStore.addUrlBatch([request.url], false, true, { fromBrowser: true, hidden: picking });
     track(groupId, request.requestId);
 
     let readyIds: string[];
     try {
       readyIds = await mediaStore.waitForGroupReady(groupId);
     } catch {
-      // Couldn't read the link; the group shows the error and so does the extension.
+      // Couldn't read the link. The extension shows the error; once its picker
+      // closes, nothing stays behind in the app.
+      if (picking) {
+        if (!cancelledEarly.delete(request.requestId)) await waitForChoice(request.requestId, [groupId]);
+        discard([groupId]);
+      }
       return;
     }
     if (readyIds.length === 0) return;
+    if (cancelledEarly.delete(request.requestId)) {
+      discard(readyIds);
+      return;
+    }
 
     for (const id of readyIds) {
       track(id, request.requestId);
       const group = groupStore.findGroupById(id);
-      if (group) group.fromBrowser = true;
-      waitingForSaveAs.add(id);
+      if (group) {
+        group.fromBrowser = true;
+        if (picking) group.hidden = true;
+      }
     }
+
+    let pickedOptions: ((groupId: string) => DownloadOptions) | undefined;
+    if (picking) {
+      // Wait for a format to be picked in the browser.
+      for (const id of readyIds) pickingGroups.add(id);
+      const choice = await waitForChoice(request.requestId, readyIds);
+      for (const id of readyIds) pickingGroups.delete(id);
+      if (!choice) {
+        discard(readyIds);
+        return;
+      }
+      for (const id of readyIds) {
+        const group = groupStore.findGroupById(id);
+        if (group) group.hidden = false;
+      }
+      pickedOptions = id => optionsFromChoice(id, choice);
+    }
+    const optionsOf = pickedOptions ?? (id => optionsFor(id, request.audioOnly));
+
+    for (const id of readyIds) waitingForSaveAs.add(id);
 
     let choice: SaveAsChoice | null = null;
     try {
@@ -98,10 +227,10 @@ export const useBridgeStore = defineStore('bridge', () => {
         const items = Object.values(group.items).filter(
           item => !item.entries && stateStore.getState(item.id) !== MediaState.done,
         );
-        choice = await saveAsStore.askWhereToSave(group, items, optionsFor(id, request.audioOnly));
+        choice = await saveAsStore.askWhereToSave(group, items, optionsOf(id));
       } else {
         // A playlist that was split into separate videos: one folder for all.
-        choice = await saveAsStore.askForFolder(optionsFor(readyIds[0], request.audioOnly).trackType);
+        choice = await saveAsStore.askForFolder(optionsOf(readyIds[0]).trackType);
       }
     } finally {
       for (const id of readyIds) waitingForSaveAs.delete(id);
@@ -123,18 +252,14 @@ export const useBridgeStore = defineStore('bridge', () => {
         state: 'cancelled',
         at: Date.now(),
       });
-      for (const id of readyIds) {
-        if (groupStore.findGroupById(id)) mediaStore.deleteGroup(id);
-        requestByGroup.delete(id);
-        firstSeen.delete(id);
-      }
+      discard(readyIds);
       return;
     }
 
     for (const id of readyIds) {
       if (!groupStore.findGroupById(id)) continue;
       saveAsStore.setChoice(id, choice);
-      const options = optionsFor(id, request.audioOnly);
+      const options = optionsOf(id);
       optionsStore.setOptions(id, options);
       await mediaStore.downloadGroup(id, options);
     }
@@ -142,6 +267,7 @@ export const useBridgeStore = defineStore('bridge', () => {
 
   function stateOf(groupId: string): BridgeItemState {
     if (waitingForSaveAs.has(groupId)) return 'saveAs';
+    if (pickingGroups.has(groupId)) return 'pick';
     switch (stateStore.getGroupState(groupId)) {
       case MediaState.playlistSelection:
         return 'choosing';
@@ -177,8 +303,19 @@ export const useBridgeStore = defineStore('bridge', () => {
       title: group.title ?? group.url,
       url: group.url,
       thumbnail: group.thumbnail,
+      duration: group.duration,
+      uploader: group.uploader,
       state,
     };
+
+    if (state === 'pick') {
+      const requestId = requestByGroup.get(groupId);
+      const waiting = requestId ? waitingForChoice.get(requestId) : undefined;
+      item.choices = choicesFor(waiting?.groupIds ?? [groupId]);
+      if (waiting && waiting.groupIds.length > 1) item.total = waiting.groupIds.length;
+      else if (group.isCombined) item.total = Object.values(group.items).filter(i => !i.isLeader).length;
+      return item;
+    }
 
     if (isList) {
       const progress = progressStore.findGroupProgress(groupId);

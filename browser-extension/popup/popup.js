@@ -1,4 +1,5 @@
-import { cleanVideoUrl, describe, isDownloadablePage } from '../shared.js';
+import { OPEN_APP_LINK, cleanVideoUrl, describe, isDownloadablePage, isKnownVideoPage } from '../shared.js';
+import { mountPicker } from '../ui/picker.js';
 
 const $ = id => document.getElementById(id);
 
@@ -8,6 +9,8 @@ const ICONS = {
 };
 
 let activeTab = null;
+let pageUrl = null;
+let picker = null;
 
 async function send(message) {
   try {
@@ -17,40 +20,88 @@ async function send(message) {
   }
 }
 
-async function showPage() {
-  [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const url = activeTab?.url && cleanVideoUrl(activeTab.url);
-  const usable = !!url && isDownloadablePage(url);
-  $('page').hidden = !usable;
-  $('page-unavailable').hidden = usable;
-  if (usable) $('page-title').textContent = activeTab.title || url;
+function pageMessage(...children) {
+  const box = document.createElement('div');
+  box.className = 'page-message';
+  box.append(...children);
+  $('page').replaceChildren(box);
 }
 
-async function download(audioOnly) {
-  $('download-video').disabled = true;
-  $('download-audio').disabled = true;
-  const result = await send({ type: 'download', fromPopup: true, audioOnly });
-  // If the app had to be started, a new tab opened and this popup is gone.
-  if (result?.ok) {
-    $('page-title').textContent = 'Sent — choose where to save it.';
-  } else if (result && !result.needsLaunch) {
-    $('page-title').textContent = result.error ?? 'Couldn’t send it.';
+function text(tag, className, value) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = value;
+  return node;
+}
+
+function button(label, onClick, className = '') {
+  const node = document.createElement('button');
+  node.type = 'button';
+  node.className = className;
+  node.textContent = label;
+  node.addEventListener('click', onClick);
+  return node;
+}
+
+/** The app is closed: a small window starts it, then shows the picker. */
+function offerToStart() {
+  pageMessage(
+    text('p', 'page-title', activeTab?.title || pageUrl),
+    text('p', '', 'Open Video Downloader isn’t running. Start it and pick the format there.'),
+    button('Start and download', async () => {
+      await send({ type: 'open-picker-window', url: pageUrl, title: activeTab?.title });
+      window.close();
+    }, 'primary'),
+  );
+}
+
+function showPicker() {
+  picker?.destroy();
+  picker = mountPicker($('page'), {
+    url: pageUrl,
+    title: activeTab?.title,
+    onAppMissing: offerToStart,
+  });
+}
+
+async function showPage() {
+  // popup.html#url=…&title=… stands in for the current tab (used by the extension's tests).
+  const forced = new URLSearchParams(location.hash.slice(1));
+  [activeTab] = forced.get('url')
+    ? [{ url: forced.get('url'), title: forced.get('title') ?? undefined }]
+    : await chrome.tabs.query({ active: true, currentWindow: true });
+  pageUrl = activeTab?.url ? cleanVideoUrl(activeTab.url) : null;
+  if (!pageUrl || !isDownloadablePage(pageUrl)) {
+    pageMessage(text('p', '', 'Open a video page (YouTube, Shorts, TikTok, …) and click here to download it.'));
+    return;
   }
-  setTimeout(() => {
-    $('download-video').disabled = false;
-    $('download-audio').disabled = false;
-  }, 1500);
+  const app = await send({ type: 'find-app' });
+  if (!app?.port) {
+    offerToStart();
+  } else if (isKnownVideoPage(pageUrl)) {
+    showPicker();
+  } else if (/(^|\.)youtube\.com$/.test(new URL(pageUrl).hostname) && !new URL(pageUrl).pathname.startsWith('/playlist')) {
+    // YouTube's home, search, channel pages… (a whole feed isn't what you want).
+    pageMessage(text('p', '', 'Open a video or Short, then click here to download it.'));
+  } else {
+    // Unknown site: only look for a video when asked.
+    pageMessage(
+      text('p', 'page-title', activeTab.title || pageUrl),
+      button('Find video on this page', showPicker, 'primary'),
+    );
+  }
 }
 
 function render({ connected, items }) {
   const connection = $('connection');
   connection.classList.toggle('on', connected);
   connection.classList.toggle('off', !connected);
-  $('connection-text').textContent = connected ? 'Connected' : 'App not running — Download starts it';
+  $('connection-text').textContent = connected ? 'Connected' : 'App not running';
 
   const list = $('list');
   list.replaceChildren();
-  const shown = (items ?? []).slice(0, 20);
+  // The page being picked right now is shown above, not in the list.
+  const shown = (items ?? []).filter(item => item.state !== 'pick').slice(0, 20);
   $('empty').hidden = shown.length > 0;
   $('empty').textContent = connected ? 'Nothing downloading yet.' : 'Nothing to show while the app is closed.';
 
@@ -124,11 +175,17 @@ function render({ connected, items }) {
   }
 }
 
-$('download-video').addEventListener('click', () => void download(false));
-$('download-audio').addEventListener('click', () => void download(true));
 $('open-app').addEventListener('click', async () => {
-  await send({ type: 'show-app' });
-  window.close();
+  const result = await send({ type: 'show-app' });
+  if (!result?.ok) {
+    // Not running: this link starts it (Chrome may ask the first time).
+    const a = document.createElement('a');
+    a.href = OPEN_APP_LINK;
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+  setTimeout(() => window.close(), 300);
 });
 
 const port = chrome.runtime.connect({ name: 'status' });

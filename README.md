@@ -4,7 +4,7 @@
 >
 > **Mac download:** grab the `.dmg` from the [Mac build release](../../releases/tag/mac-build). It isn't signed with an Apple developer certificate, so macOS blocks it the first time: click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. You only have to do this once.
 >
-> **Chrome extension (optional):** download from the browser instead. YouTube gets a **Download** button next to Like/Share, right-clicking any page offers **Download this video**, and the toolbar icon shows progress; click a finished download to open it. Browser downloads always ask where to save first. If the app is closed, the extension starts it.
+> **Chrome extension (optional):** download without leaving the browser. On a video page (YouTube, Shorts, TikTok, …) click the extension's icon, pick **Video + Audio / Audio only / Video only** and the quality, hit **Download**, then pick where to save it. The icon shows progress; click a finished download to open it. Right-clicking a page or link works too. If the app is closed, the extension starts it in the background.
 > To install: grab `Open-Video-Downloader-Save-As_chrome-extension.zip` from the same [release](../../releases/tag/mac-build), unzip it, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the unzipped folder. The first time it starts the app, Chrome asks to open Open Video Downloader: tick **Always allow** and click **Open**. More in [browser-extension/README.md](browser-extension/README.md).
 >
 > This fork doesn't auto-update or send crash reports to the original project. Everything else below is the original README.

@@ -2,10 +2,8 @@ import {
   ACTIVE_STATES,
   AppNotRunning,
   FINAL_STATES,
-  OPEN_APP_LINK,
   api,
   cleanVideoUrl,
-  downloadLink,
   findApp,
   isDownloadablePage,
 } from './shared.js';
@@ -15,7 +13,7 @@ const SLOW_POLL_MS = 1500;
 // How long a sent download is followed before giving up on it.
 const FOLLOW_FOR_MS = 6 * 60 * 60 * 1000;
 
-/** Latest answer from the app, pushed to the popup and YouTube tabs. */
+/** Latest answer from the app, pushed to the popup and picker windows. */
 let latest = { connected: false, items: [], checkedAt: 0 };
 let polling = false;
 const listeners = new Set();
@@ -104,6 +102,7 @@ async function notifyFinished() {
   const now = Date.now();
 
   for (const [requestId, info] of Object.entries(followed)) {
+    if (!info.chosen) continue;
     if (info.finished) {
       if (now - info.sentAt > FOLLOW_FOR_MS) {
         delete followed[requestId];
@@ -173,86 +172,125 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
   await openItem(info.openId, reveal);
 });
 
-// ---------- Starting downloads ----------
+// ---------- Picking a format, then downloading ----------
+
+// A closed picker is cancelled after a short grace period, so reopening the
+// popup on the same video right away reuses the formats already read.
+const CANCEL_AFTER_MS = 20 * 1000;
+const cancelTimers = new Map();
+const requestForUrl = new Map();
+
+async function unfollow(requestId) {
+  const followed = await getFollowed();
+  delete followed[requestId];
+  await setFollowed(followed);
+}
 
 /**
- * Sends a download to the app. If the app isn't running, returns a link that
- * starts it with the download attached; the caller opens that link.
+ * Has the app read the video's formats. Returns { ok, requestId }, or
+ * { needsLaunch: true } when the app isn't running.
  */
-async function startDownload({ url, title, audioOnly }) {
+async function prepare({ url, title }) {
   const clean = cleanVideoUrl(url);
   if (!clean || !isDownloadablePage(clean)) return { ok: false, error: 'This page can’t be downloaded.' };
-  const requestId = crypto.randomUUID();
-  await follow(requestId, { url: clean, title, audioOnly: !!audioOnly });
 
+  const reuse = requestForUrl.get(clean);
+  if (reuse && cancelTimers.has(reuse)) {
+    clearTimeout(cancelTimers.get(reuse));
+    cancelTimers.delete(reuse);
+    return { ok: true, requestId: reuse };
+  }
+
+  const requestId = crypto.randomUUID();
+  await follow(requestId, { url: clean, title, chosen: false });
   try {
-    const result = await api('/v1/download', { url: clean, requestId, audioOnly: !!audioOnly });
+    const result = await api('/v1/download', { url: clean, requestId, chooseFormat: true });
     if (!result?.ok) throw new Error(result?.error ?? 'The app said no.');
+    requestForUrl.set(clean, requestId);
     void keepWatching();
     return { ok: true, requestId };
   } catch (e) {
-    if (!(e instanceof AppNotRunning)) {
-      const followed = await getFollowed();
-      delete followed[requestId];
-      await setFollowed(followed);
-      return { ok: false, error: String(e.message ?? e) };
+    await unfollow(requestId);
+    if (e instanceof AppNotRunning) return { ok: false, needsLaunch: true };
+    return { ok: false, error: String(e.message ?? e) };
+  }
+}
+
+async function choose({ requestId, trackType, height, fps, abr }) {
+  try {
+    const result = await api('/v1/choose', { requestId, trackType, height, fps, abr });
+    if (!result?.ok) return { ok: false, error: result?.error ?? 'The app said no.' };
+  } catch (e) {
+    return { ok: false, error: e instanceof AppNotRunning ? 'Open Video Downloader isn’t running.' : String(e) };
+  }
+  const followed = await getFollowed();
+  if (followed[requestId]) {
+    followed[requestId].chosen = true;
+    await setFollowed(followed);
+    for (const [url, id] of requestForUrl) if (id === requestId) requestForUrl.delete(url);
+  }
+  void keepWatching();
+  return { ok: true };
+}
+
+/** The picker closed. If nothing was picked, let the app drop it. */
+async function pickerClosed(requestId) {
+  const info = (await getFollowed())[requestId];
+  if (!info || info.chosen) return;
+  clearTimeout(cancelTimers.get(requestId));
+  cancelTimers.set(requestId, setTimeout(async () => {
+    cancelTimers.delete(requestId);
+    const latestInfo = (await getFollowed())[requestId];
+    if (latestInfo?.chosen) return;
+    for (const [url, id] of requestForUrl) if (id === requestId) requestForUrl.delete(url);
+    await unfollow(requestId);
+    await api('/v1/cancel', { requestId }).catch(() => undefined);
+  }, CANCEL_AFTER_MS));
+}
+
+/** A small window with the picker (it also starts the app when needed). */
+async function openPickerWindow({ url, title }) {
+  const page = chrome.runtime.getURL(`window/window.html#${encodeURIComponent(JSON.stringify({ url, title }))}`);
+  const width = 400;
+  const height = 600;
+  let position = {};
+  try {
+    const current = await chrome.windows.getLastFocused();
+    if (current?.left != null && current.width) {
+      position = { left: Math.max(0, current.left + current.width - width - 24), top: (current.top ?? 0) + 72 };
     }
-    void keepWatching();
-    return { ok: false, needsLaunch: true, requestId, link: downloadLink({ url: clean, requestId, audioOnly }) };
+  } catch {
+    // Let Chrome place it.
   }
-}
-
-/**
- * Opens a small page that starts the app with a link. Chrome asks once
- * whether to allow it ("Always allow" makes it instant from then on).
- */
-async function openLaunchPage(link, fromTab) {
-  const page = chrome.runtime.getURL(`launch/launch.html#${encodeURIComponent(link)}`);
-  await chrome.tabs.create({
-    url: page,
-    active: true,
-    ...(fromTab ? { index: fromTab.index + 1, openerTabId: fromTab.id } : {}),
-  });
-}
-
-async function downloadFromTab(tab, { url, audioOnly } = {}) {
-  const result = await startDownload({ url: url ?? tab.url, title: url ? undefined : tab.title, audioOnly });
-  if (result.needsLaunch) await openLaunchPage(result.link, tab);
-  else if (!result.ok) {
-    await chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icons/icon-128.png',
-      title: 'Couldn’t send the download',
-      message: result.error ?? '',
-    });
-  }
-  return result;
+  await chrome.windows.create({ url: page, type: 'popup', width, height, focused: true, ...position });
 }
 
 // ---------- Right-click menu and keyboard shortcut ----------
 
 function createMenus() {
   chrome.contextMenus.removeAll(() => {
-    const page = ['page', 'frame', 'video', 'audio'];
-    chrome.contextMenus.create({ id: 'ovd', title: 'Open Video Downloader', contexts: [...page, 'link'] });
-    chrome.contextMenus.create({ id: 'page-video', parentId: 'ovd', title: 'Download this video', contexts: page });
-    chrome.contextMenus.create({ id: 'page-audio', parentId: 'ovd', title: 'Download audio only', contexts: page });
-    chrome.contextMenus.create({ id: 'link-video', parentId: 'ovd', title: 'Download linked video', contexts: ['link'] });
-    chrome.contextMenus.create({ id: 'link-audio', parentId: 'ovd', title: 'Download linked audio only', contexts: ['link'] });
+    chrome.contextMenus.create({
+      id: 'page',
+      title: 'Download with Open Video Downloader',
+      contexts: ['page', 'frame', 'video', 'audio'],
+    });
+    chrome.contextMenus.create({
+      id: 'link',
+      title: 'Download link with Open Video Downloader',
+      contexts: ['link'],
+    });
   });
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (!tab) return;
-  const audioOnly = info.menuItemId.endsWith('-audio');
-  const url = info.menuItemId.startsWith('link-') ? info.linkUrl : info.pageUrl;
-  void downloadFromTab(tab, { url, audioOnly });
+  const url = info.menuItemId === 'link' ? info.linkUrl : info.pageUrl;
+  if (url) void openPickerWindow({ url, title: info.menuItemId === 'link' ? undefined : tab?.title });
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command !== 'download-video') return;
   const target = tab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  if (target) await downloadFromTab(target);
+  if (target?.url && isDownloadablePage(target.url)) await openPickerWindow({ url: target.url, title: target.title });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -270,12 +308,15 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'watch') void keepWatching();
 });
 
-// ---------- Popup and YouTube tabs ----------
+// ---------- Popup, picker window ----------
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'status') return;
+  if (port.name !== 'status' && !port.name.startsWith('picker:')) return;
   listeners.add(port);
-  port.onDisconnect.addListener(() => listeners.delete(port));
+  port.onDisconnect.addListener(() => {
+    listeners.delete(port);
+    if (port.name.startsWith('picker:')) void pickerClosed(port.name.slice('picker:'.length));
+  });
   // Fresh enough? Show it now; otherwise the next check sends it in a moment.
   if (Date.now() - latest.checkedAt < 3000) port.postMessage({ type: 'status', ...latest });
   void keepWatching();
@@ -288,14 +329,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   };
 
   switch (message?.type) {
-    case 'download':
-      // From the YouTube button: the page opens the link itself if needed,
-      // so Chrome can offer "Always allow youtube.com" for it.
-      if (sender.tab && !message.fromPopup) return reply(startDownload(message));
-      return reply((async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        return downloadFromTab(tab, message);
-      })());
+    case 'prepare':
+      return reply(prepare(message));
+    case 'choose':
+      return reply(choose(message));
+    case 'open-picker-window':
+      return reply(openPickerWindow(message).then(() => ({ ok: true })));
     case 'status':
       return reply((async () => (Date.now() - latest.checkedAt < 1000 ? latest : refresh()))());
     case 'open':
@@ -305,15 +344,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           return await api('/v1/show');
         } catch {
-          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-          await openLaunchPage(OPEN_APP_LINK, tab);
-          return { ok: true, launching: true };
+          return { ok: false, error: 'app-not-running' };
         }
-      })());
-    case 'help':
-      return reply((async () => {
-        await chrome.tabs.create({ url: chrome.runtime.getURL('launch/launch.html#help') });
-        return { ok: true };
       })());
     case 'find-app':
       return reply(findApp());

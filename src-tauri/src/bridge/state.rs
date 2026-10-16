@@ -25,6 +25,41 @@ pub struct BridgeRequest {
   pub window_was_visible: bool,
   #[serde(default)]
   pub window_was_focused: bool,
+  /// Get the video's formats and wait for the browser to pick one, instead of
+  /// downloading with the app's current settings.
+  #[serde(default)]
+  pub choose_format: bool,
+}
+
+/// The format picked in the browser for a download that was waiting on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeChoice {
+  pub request_id: String,
+  /// "both", "audio" or "video", like the app's own track picker.
+  pub track_type: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub height: Option<u32>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub fps: Option<f64>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub abr: Option<f64>,
+}
+
+/// The browser closed the format picker without downloading.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeCancel {
+  pub request_id: String,
+}
+
+/// Work for the app's window, in the order it arrived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum BridgeCommand {
+  Download(BridgeRequest),
+  Choose(BridgeChoice),
+  Cancel(BridgeCancel),
 }
 
 /// One download as the extension sees it. The app's window fills these in.
@@ -64,11 +99,18 @@ pub struct BridgeItem {
   pub file_name: Option<String>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub error: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub duration: Option<f64>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub uploader: Option<String>,
+  /// While waiting for the browser: the formats to pick from.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub choices: Option<serde_json::Value>,
 }
 
 #[derive(Default)]
 struct Inner {
-  pending: VecDeque<BridgeRequest>,
+  pending: VecDeque<BridgeCommand>,
   seen: VecDeque<String>,
   items: Vec<BridgeItem>,
 }
@@ -106,11 +148,21 @@ impl BridgeState {
     while inner.seen.len() > MAX_SEEN {
       inner.seen.pop_front();
     }
-    inner.pending.push_back(request);
+    inner.pending.push_back(BridgeCommand::Download(request));
     EnqueueResult::Queued
   }
 
-  pub fn take_pending(&self) -> Vec<BridgeRequest> {
+  /// Queues a format choice or a cancel for a download already sent.
+  pub fn push_command(&self, command: BridgeCommand) -> EnqueueResult {
+    let mut inner = self.lock();
+    if inner.pending.len() >= MAX_PENDING {
+      return EnqueueResult::Full;
+    }
+    inner.pending.push_back(command);
+    EnqueueResult::Queued
+  }
+
+  pub fn take_pending(&self) -> Vec<BridgeCommand> {
     self.lock().pending.drain(..).collect()
   }
 

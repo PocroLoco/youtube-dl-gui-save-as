@@ -94,4 +94,4 @@ jobs:
 
           Not signed with an Apple developer certificate, so macOS blocks it the first time: click Done, then go to System Settings → Privacy & Security, scroll down, and click Open Anyway. You only have to do this once.
 
-          Chrome extension (optional): unzip the extension file, open chrome://extensions, turn on Developer mode, click Load unpacked, and pick the unzipped folder. YouTube then gets a Download button, and right-clicking any page offers to download it."
+          Chrome extension (optional): unzip the extension file, open chrome://extensions, turn on Developer mode, click Load unpacked, and pick the unzipped folder. Then on any video page, click the extension's icon to pick the format and download."

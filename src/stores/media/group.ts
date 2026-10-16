@@ -17,7 +17,7 @@ export const useMediaGroupStore = defineStore('media-group', () => {
   const orderedGroups = computed(() =>
     groupOrder.value
       .map(id => groups.value[id])
-      .filter((group): group is Group => !!group),
+      .filter((group): group is Group => !!group && !group.hidden),
   );
 
   const findGroupById = (id: string) => groups.value[id];
@@ -181,7 +181,7 @@ export const useMediaGroupStore = defineStore('media-group', () => {
     Object.assign(group, leaderMeta);
   }
 
-  const countGroups = () => groupOrder.value.length;
+  const countGroups = () => groupOrder.value.filter(id => !groups.value[id]?.hidden).length;
 
   function getAllFormats() {
     const formatMap = new Map<string, MediaFormat>();

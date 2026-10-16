@@ -142,7 +142,8 @@ export const useMediaProgressStore = defineStore('media-progress', () => {
 
   function findAllProgress(): Required<MediaItemsProgress> {
     const groups = groupStore.groups;
-    const groupIds = Object.keys(groups);
+    // Downloads still waiting for a format from the browser aren't in the queue yet.
+    const groupIds = Object.keys(groups).filter(id => !groups[id]?.hidden);
 
     const progress: Required<MediaItemsProgress> = {
       total: 0,

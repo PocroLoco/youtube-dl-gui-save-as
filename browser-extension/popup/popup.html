@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>Open Video Downloader</title>
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="../ui/picker.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -16,18 +17,7 @@
     <button type="button" id="open-app" title="Open the app">Open app</button>
   </header>
 
-  <section class="page" id="page">
-    <div class="page-title" id="page-title"></div>
-    <div class="page-actions">
-      <button type="button" class="primary" id="download-video">
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11 4h2v9.17l3.59-3.58L18 11l-6 6-6-6 1.41-1.41L11 13.17V4Zm-6 14h14v2H5v-2Z"/></svg>
-        Download
-      </button>
-      <button type="button" id="download-audio">Audio only</button>
-    </div>
-    <p class="page-note">You’ll pick where to save it first.</p>
-  </section>
-  <p class="page-unavailable" id="page-unavailable" hidden>Open a video page to download it.</p>
+  <section class="page" id="page" aria-live="polite"></section>
 
   <section class="downloads">
     <h2>Downloads</h2>

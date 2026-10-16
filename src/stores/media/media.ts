@@ -201,7 +201,7 @@ export const useMediaStore = defineStore('media', () => {
     url: string,
     fromShortcut: boolean = false,
     skipPlaylistSelection: boolean = false,
-    fromBrowser: boolean = false,
+    browser: { fromBrowser?: boolean; hidden?: boolean } = {},
   ) {
     const id = uuidv4();
     const groupId = uuidv4();
@@ -221,7 +221,8 @@ export const useMediaStore = defineStore('media', () => {
       formats: [],
       filesize: 0,
       fromShortcut,
-      fromBrowser: fromBrowser || undefined,
+      fromBrowser: browser.fromBrowser || undefined,
+      hidden: browser.hidden || undefined,
       skipPlaylistSelection,
       items: {
         [id]: {
@@ -294,10 +295,10 @@ export const useMediaStore = defineStore('media', () => {
     urls: string[],
     fromShortcut: boolean = false,
     skipPlaylistSelection: boolean = false,
-    fromBrowser: boolean = false,
+    browser: { fromBrowser?: boolean; hidden?: boolean } = {},
   ): Promise<string[]> {
     return await Promise.all(
-      urls.map(url => dispatchMediaInfoFetch(url, fromShortcut, skipPlaylistSelection, fromBrowser)),
+      urls.map(url => dispatchMediaInfoFetch(url, fromShortcut, skipPlaylistSelection, browser)),
     );
   }
 
@@ -430,6 +431,7 @@ export const useMediaStore = defineStore('media', () => {
   async function downloadAllGroups(fromShortcut: boolean = false) {
     watchClipboardStore.disable();
     const group_ids = groupStore.groupOrder
+      .filter(gid => !groupStore.findGroupById(gid)?.hidden)
       .filter(gid => stateStore.getGroupState(gid) === MediaState.configure);
 
     await Promise.all(group_ids.map((gid) => {
@@ -485,6 +487,7 @@ export const useMediaStore = defineStore('media', () => {
 
   function deleteGroupsByState(states: MediaState[]) {
     for (const groupId of [...groupStore.groupOrder]) {
+      if (groupStore.findGroupById(groupId)?.hidden) continue;
       const state = stateStore.getGroupState(groupId);
       if (state && states.includes(state)) {
         deleteGroup(groupId);

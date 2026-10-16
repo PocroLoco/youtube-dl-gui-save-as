@@ -36,5 +36,7 @@ export type Group = {
   fromShortcut?: boolean;
   /** Sent from the browser extension, which shows its own notifications. */
   fromBrowser?: boolean;
+  /** Waiting for a format to be picked in the browser: not shown in the app yet. */
+  hidden?: boolean;
   skipPlaylistSelection?: boolean;
 };

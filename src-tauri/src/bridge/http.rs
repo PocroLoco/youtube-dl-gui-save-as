@@ -5,8 +5,10 @@
 //! start downloads or read what you're downloading. The `Host` check stops
 //! DNS-rebinding tricks. Nothing is reachable from other machines.
 
-use super::state::{BridgeRequest, BridgeState, EnqueueResult};
-use super::{normalize_request_id, validate_download_url, ALLOWED_ORIGINS};
+use super::state::{
+  BridgeCancel, BridgeChoice, BridgeCommand, BridgeRequest, BridgeState, EnqueueResult,
+};
+use super::{normalize_request_id, validate_choice, validate_download_url, ALLOWED_ORIGINS};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::Read;
@@ -88,6 +90,8 @@ struct DownloadBody {
   request_id: Option<String>,
   #[serde(default)]
   audio_only: bool,
+  #[serde(default)]
+  choose_format: bool,
 }
 
 #[derive(Deserialize)]
@@ -142,6 +146,7 @@ pub fn route(host: &dyn BridgeHost, port: u16, request: &HttpRequest) -> HttpRes
         audio_only: body.audio_only,
         window_was_visible,
         window_was_focused,
+        choose_format: body.choose_format,
       });
       match queued {
         EnqueueResult::Queued => {
@@ -157,6 +162,24 @@ pub fn route(host: &dyn BridgeHost, port: u16, request: &HttpRequest) -> HttpRes
           HttpResponse::json(429, json!({ "ok": false, "error": "busy" }), origin)
         }
       }
+    }
+    ("POST", "/v1/choose") => {
+      let Ok(choice) = serde_json::from_slice::<BridgeChoice>(request.body) else {
+        return HttpResponse::json(400, json!({ "ok": false, "error": "bad request" }), origin);
+      };
+      if !validate_choice(&choice) {
+        return HttpResponse::json(400, json!({ "ok": false, "error": "bad choice" }), origin);
+      }
+      queue_command(host, BridgeCommand::Choose(choice), origin)
+    }
+    ("POST", "/v1/cancel") => {
+      let Ok(cancel) = serde_json::from_slice::<BridgeCancel>(request.body) else {
+        return HttpResponse::json(400, json!({ "ok": false, "error": "bad request" }), origin);
+      };
+      if normalize_request_id(Some(&cancel.request_id)) != cancel.request_id {
+        return HttpResponse::json(400, json!({ "ok": false, "error": "bad request" }), origin);
+      }
+      queue_command(host, BridgeCommand::Cancel(cancel), origin)
     }
     ("POST", "/v1/open") => {
       let Ok(body) = serde_json::from_slice::<OpenBody>(request.body) else {
@@ -179,6 +202,16 @@ pub fn route(host: &dyn BridgeHost, port: u16, request: &HttpRequest) -> HttpRes
       HttpResponse::json(200, json!({ "ok": true }), origin)
     }
     _ => HttpResponse::json(404, json!({ "ok": false, "error": "not found" }), origin),
+  }
+}
+
+fn queue_command(host: &dyn BridgeHost, command: BridgeCommand, origin: &str) -> HttpResponse {
+  match host.state().push_command(command) {
+    EnqueueResult::Full => HttpResponse::json(429, json!({ "ok": false, "error": "busy" }), origin),
+    _ => {
+      host.notify_pending();
+      HttpResponse::json(200, json!({ "ok": true }), origin)
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 use super::http::{authorize, route, BridgeHost, HttpRequest};
+use super::state::BridgeCancel;
 use super::*;
 use std::cell::RefCell;
 
@@ -118,10 +119,14 @@ fn download_is_queued_once() {
 
   let pending = host.state.take_pending();
   assert_eq!(pending.len(), 1);
-  assert_eq!(pending[0].url, "https://www.youtube.com/watch?v=abc");
-  assert!(pending[0].audio_only);
-  assert!(pending[0].window_was_visible);
-  assert!(!pending[0].window_was_focused);
+  let BridgeCommand::Download(request) = &pending[0] else {
+    panic!("expected a download, got {:?}", pending[0]);
+  };
+  assert_eq!(request.url, "https://www.youtube.com/watch?v=abc");
+  assert!(request.audio_only);
+  assert!(request.window_was_visible);
+  assert!(!request.window_was_focused);
+  assert!(!request.choose_format);
   assert_eq!(*host.notified.borrow(), 1);
   assert!(host.state.take_pending().is_empty());
 }
@@ -242,6 +247,8 @@ fn links_are_parsed() {
 
   let show = url::Url::parse("ovd-save-as://open").unwrap();
   assert_eq!(parse_link(&show), Some(LinkAction::Show));
+  let start = url::Url::parse("ovd-save-as://start").unwrap();
+  assert_eq!(parse_link(&start), Some(LinkAction::Start));
 
   for bad in [
     "ovd-save-as://download?url=file%3A%2F%2F%2Fetc%2Fpasswd",
@@ -273,6 +280,7 @@ fn queue_has_a_limit() {
         audio_only: false,
         window_was_visible: false,
         window_was_focused: false,
+        choose_format: false,
       }),
       EnqueueResult::Queued
     );
@@ -284,7 +292,116 @@ fn queue_has_a_limit() {
       audio_only: false,
       window_was_visible: false,
       window_was_focused: false,
+      choose_format: false,
     }),
     EnqueueResult::Full
   );
+}
+
+#[test]
+fn pick_a_format_then_download() {
+  let host = FakeHost::default();
+  let body =
+    br#"{"url":"https://www.youtube.com/shorts/abcdef","requestId":"r-pick","chooseFormat":true}"#;
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/download", body)).status,
+    200
+  );
+
+  let choice = br#"{"requestId":"r-pick","trackType":"both","height":1080,"fps":60}"#;
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/choose", choice)).status,
+    200
+  );
+
+  let pending = host.state.take_pending();
+  assert_eq!(pending.len(), 2);
+  assert!(matches!(&pending[0], BridgeCommand::Download(r) if r.choose_format));
+  assert_eq!(
+    pending[1],
+    BridgeCommand::Choose(BridgeChoice {
+      request_id: "r-pick".into(),
+      track_type: "both".into(),
+      height: Some(1080),
+      fps: Some(60.0),
+      abr: None,
+    })
+  );
+  assert_eq!(*host.notified.borrow(), 2);
+
+  // What the app's window receives.
+  let json = serde_json::to_value(&pending[1]).unwrap();
+  assert_eq!(json["kind"], "choose");
+  assert_eq!(json["requestId"], "r-pick");
+  assert_eq!(json["trackType"], "both");
+}
+
+#[test]
+fn closing_the_picker_cancels() {
+  let host = FakeHost::default();
+  let response = route(
+    &host,
+    PORT,
+    &request("POST", "/v1/cancel", br#"{"requestId":"r-pick"}"#),
+  );
+  assert_eq!(response.status, 200);
+  let pending = host.state.take_pending();
+  assert_eq!(
+    pending,
+    vec![BridgeCommand::Cancel(BridgeCancel {
+      request_id: "r-pick".into()
+    })]
+  );
+  assert_eq!(serde_json::to_value(&pending[0]).unwrap()["kind"], "cancel");
+}
+
+#[test]
+fn odd_choices_are_refused() {
+  let host = FakeHost::default();
+  for body in [
+    &br#"{"requestId":"r-1","trackType":"everything"}"#[..],
+    br#"{"requestId":"../x","trackType":"both"}"#,
+    br#"{"requestId":"r-1","trackType":"both","height":0}"#,
+    br#"{"requestId":"r-1","trackType":"both","height":99999}"#,
+    br#"{"requestId":"r-1","trackType":"audio","abr":-5}"#,
+    br#"{"trackType":"both"}"#,
+  ] {
+    let response = route(&host, PORT, &request("POST", "/v1/choose", body));
+    assert_eq!(response.status, 400, "{}", String::from_utf8_lossy(body));
+  }
+  let cancel = route(
+    &host,
+    PORT,
+    &request("POST", "/v1/cancel", br#"{"requestId":"a b"}"#),
+  );
+  assert_eq!(cancel.status, 400);
+  assert!(host.state.take_pending().is_empty());
+
+  // And websites still can't send any of it.
+  let mut from_site = request(
+    "POST",
+    "/v1/choose",
+    br#"{"requestId":"r-1","trackType":"both"}"#,
+  );
+  from_site.origin = Some("https://evil.example");
+  assert_eq!(route(&host, PORT, &from_site).status, 403);
+}
+
+#[test]
+fn choices_reach_the_extension() {
+  let host = FakeHost::default();
+  host.state.set_items(vec![BridgeItem {
+    id: "g1".into(),
+    request_id: Some("r-pick".into()),
+    state: "pick".into(),
+    choices: Some(
+      serde_json::json!({ "video": [{ "height": 1080, "fps": 60, "label": "1080p60" }] }),
+    ),
+    ..BridgeItem::default()
+  }]);
+  let body = route(&host, PORT, &request("POST", "/v1/status", b"{}"))
+    .body
+    .unwrap();
+  assert_eq!(body["items"][0]["state"], "pick");
+  assert_eq!(body["items"][0]["choices"]["video"][0]["label"], "1080p60");
 }
