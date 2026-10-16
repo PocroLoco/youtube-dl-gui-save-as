@@ -876,6 +876,16 @@
         }
       }
     },
+    "browserExtension": {
+      "legend": "Chrome extension",
+      "legendLabel": "Download from your browser: pick the format in the extension, then where to save it.",
+      "step1": "Open chrome://extensions and turn on Developer mode (top right).",
+      "step2": "Click \"Show folder\" below and drag the \"Chrome Extension\" folder onto the extensions page (or use Load unpacked and pick it).",
+      "step3": "Pin it from Chrome's puzzle-piece menu.",
+      "show": "Show folder",
+      "version": "Version {version}",
+      "hint": "Load it from this folder and it updates itself whenever the app updates."
+    },
     "update": {
       "legend": "Updates",
       "legendLabel": "Choose which parts of the app should update automatically.",
@@ -886,7 +896,8 @@
       "updateApp": {
         "label": "Automatically update the app:",
         "hint": "Turn this on to receive new features and bug fixes as soon as a new version is released."
-      }
+      },
+      "installedToast": "Update {version} is installed. It takes over the next time the app starts."
     },
     "system": {
       "legend": "System",

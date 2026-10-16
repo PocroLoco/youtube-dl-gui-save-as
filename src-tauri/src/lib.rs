@@ -1,6 +1,8 @@
+mod auto_update;
 mod binaries;
 mod bridge;
 mod commands;
+mod extension_files;
 mod i18n;
 mod logging;
 mod menu;
@@ -174,8 +176,12 @@ pub fn run() {
       // register shortcuts
       register_shortcuts(handle);
 
-      // browser extension: local bridge + ovd-save-as:// links
+      // browser extension: its files, the local bridge + ovd-save-as:// links
+      extension_files::setup(handle);
       setup_browser_bridge(handle);
+
+      // updates from the fork's own releases (also brings extension updates)
+      auto_update::start(handle);
 
       Ok(())
     })
@@ -210,6 +216,8 @@ pub fn run() {
       bridge::bridge_status_set,
       bridge::bridge_step_back,
       bridge::bring_window_forward,
+      extension_files::extension_folder_reveal,
+      extension_files::extension_folder_info,
     ])
     .build(tauri::generate_context!())
     .expect("error while running tauri application");

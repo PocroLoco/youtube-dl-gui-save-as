@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Open Video Downloader (Save As)",
   "short_name": "OVD Save As",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Download the video you're watching with the Open Video Downloader (Save As) app: pick the format, pick where to save, open the file.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwCnvDv2CpewUCIEIhK6769PWwrDpd21iqAlvwfW4vxUZgC7Q2zDmjVvWtHyd+nj/sNSVqc7dWvA9edNSM2VFqW2mM+OYU291mbE/jvn5YpxqqLMJI1ijuPSNnEx6zhcCdgn4VcJ7T6tAs5bGWJOQgv+X5XmXQP1+ZUdLPZ9GhMLVMhT0gfB91514iGMXnHHnqEYzJfveRmkXtdy2DHbf3hz7TMgj8c1zBv562Qd704yOArd3HDbu9oVAZvtr3HsSBUAnQX8ua447Cuj1O8Kgg0V9GFDwGw+/KCquL5P3XuumeIgEEIpU77ZoQU/MRNNaWSnLEuZcq9CUWgnc0qSr+QIDAQAB",
   "minimum_chrome_version": "116",
@@ -24,8 +24,16 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["activeTab", "contextMenus", "notifications", "storage", "alarms"],
-  "host_permissions": ["http://127.0.0.1/*"],
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "notifications",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
   "commands": {
     "download-video": {
       "description": "Download the video on this page"

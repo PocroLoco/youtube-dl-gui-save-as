@@ -3,7 +3,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "bundle": {
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "dmg"],
     "macOS": {
       "signingIdentity": "-"

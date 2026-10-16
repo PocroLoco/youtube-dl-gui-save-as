@@ -49,23 +49,73 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build universal app
-        run: npx tauri build --target universal-apple-darwin --config src-tauri/tauri.fork-mac.conf.json
-
-      - name: Check the app opens ovd-save-as:// links
+      # Every build gets a higher version (3.2.1xx), so installed copies can see
+      # there's an update. The extension carries the same number: the app ships
+      # it, and the extension reloads itself when the app has a newer one.
+      - name: Stamp the version
+        id: version
+        env:
+          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
-          plist="$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)/Contents/Info.plist"
-          plutil -p "$plist" | grep -A8 CFBundleURLTypes
-          plutil -p "$plist" | grep -q '"ovd-save-as"'
+          base=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
+          version="${base}.$((100 + GITHUB_RUN_NUMBER))"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "updates=$HAS_UPDATER_KEY" >> "$GITHUB_OUTPUT"
+          node - "$version" "$HAS_UPDATER_KEY" <<'EOF'
+          const fs = require('fs');
+          const [version, hasKey] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync('browser-extension/manifest.json', 'utf8'));
+          manifest.version = version;
+          fs.writeFileSync('browser-extension/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          const config = JSON.parse(fs.readFileSync('src-tauri/tauri.fork-mac.conf.json', 'utf8'));
+          config.version = version;
+          // Without the signing key (a repo secret), build without self-updates.
+          config.bundle.createUpdaterArtifacts = hasKey === 'true';
+          fs.writeFileSync('fork-build.conf.json', JSON.stringify(config, null, 2));
+          console.log(`version ${version}, self-updates: ${hasKey === 'true'}`);
+          EOF
 
-      - name: Collect the .dmg
+      - name: Build universal app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: npx tauri build --target universal-apple-darwin --config fork-build.conf.json
+
+      - name: Check the app opens ovd-save-as:// links and carries the extension
+        run: |
+          app="$(ls -d src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)"
+          plutil -p "$app/Contents/Info.plist" | grep -A8 CFBundleURLTypes
+          plutil -p "$app/Contents/Info.plist" | grep -q '"ovd-save-as"'
+          grep -q '"version": "${{ steps.version.outputs.version }}"' "$app/Contents/Resources/browser-extension/manifest.json"
+
+      - name: Collect the .dmg and update files
         id: dmg
         run: |
+          version="${{ steps.version.outputs.version }}"
           src=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
-          version=$(node -p "require('./package.json').version")
           out="Open-Video-Downloader-Save-As_${version}_mac-universal.dmg"
           cp "$src" "$out"
           echo "file=$out" >> "$GITHUB_OUTPUT"
+          files="$out"
+          if [ "${{ steps.version.outputs.updates }}" = "true" ]; then
+            bundle=src-tauri/target/universal-apple-darwin/release/bundle/macos
+            tarball="Open-Video-Downloader-Save-As.app.tar.gz"
+            cp "$bundle"/*.app.tar.gz "$tarball"
+            node - "$version" "$(cat "$bundle"/*.app.tar.gz.sig)" "https://github.com/${GITHUB_REPOSITORY}/releases/download/mac-build/$tarball" <<'EOF'
+          const fs = require('fs');
+          const [version, signature, url] = process.argv.slice(2);
+          const platform = { signature, url };
+          fs.writeFileSync('latest.json', JSON.stringify({
+            version,
+            notes: 'New build of Open Video Downloader (Save As).',
+            pub_date: new Date().toISOString(),
+            platforms: { 'darwin-aarch64': platform, 'darwin-x86_64': platform },
+          }, null, 2));
+          EOF
+            cat latest.json
+            files="$files $tarball latest.json"
+          fi
+          echo "release_files=$files" >> "$GITHUB_OUTPUT"
 
       - name: Pack the Chrome extension
         id: extension
@@ -87,11 +137,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete mac-build --yes --cleanup-tag || true
-          gh release create mac-build "${{ steps.dmg.outputs.file }}" "${{ steps.extension.outputs.file }}" \
+          gh release create mac-build ${{ steps.dmg.outputs.release_files }} "${{ steps.extension.outputs.file }}" \
             --target "$GITHUB_SHA" \
             --title "Mac build" \
-            --notes "Latest Mac build of this fork (Apple Silicon and Intel), built from ${GITHUB_SHA::7}.
+            --notes "Latest Mac build of this fork (Apple Silicon and Intel), version ${{ steps.version.outputs.version }}, built from ${GITHUB_SHA::7}. Installed copies update themselves (and the Chrome extension) automatically.
 
           Not signed with an Apple developer certificate, so macOS blocks it the first time: click Done, then go to System Settings → Privacy & Security, scroll down, and click Open Anyway. You only have to do this once.
 
-          Chrome extension (optional): unzip the extension file, open chrome://extensions, turn on Developer mode, click Load unpacked, and pick the unzipped folder. Then on any video page, click the extension's icon to pick the format and download."
+          Chrome extension: in the app, Settings → System → Chrome extension → Show folder, then drag that folder onto chrome://extensions (Developer mode on). Loaded from there it updates with the app. The zip below is the same extension, for loading by hand."

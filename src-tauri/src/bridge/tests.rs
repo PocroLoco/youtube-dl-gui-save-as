@@ -12,6 +12,8 @@ struct FakeHost {
   notified: RefCell<u32>,
   opened: RefCell<Vec<(String, bool)>>,
   shown: RefCell<u32>,
+  restarted: RefCell<u32>,
+  revealed: RefCell<u32>,
 }
 
 impl BridgeHost for FakeHost {
@@ -33,6 +35,16 @@ impl BridgeHost for FakeHost {
   }
   fn version(&self) -> String {
     "3.2.1".into()
+  }
+  fn app_info(&self) -> serde_json::Value {
+    serde_json::json!({ "version": "3.2.1", "updateReady": "3.2.105", "extensionVersion": "3.2.105" })
+  }
+  fn restart(&self) {
+    *self.restarted.borrow_mut() += 1;
+  }
+  fn reveal_extension(&self) -> Result<(), String> {
+    *self.revealed.borrow_mut() += 1;
+    Ok(())
   }
 }
 
@@ -404,4 +416,49 @@ fn choices_reach_the_extension() {
     .unwrap();
   assert_eq!(body["items"][0]["state"], "pick");
   assert_eq!(body["items"][0]["choices"]["video"][0]["label"], "1080p60");
+}
+
+#[test]
+fn update_info_and_restart() {
+  let host = FakeHost::default();
+  let status = route(&host, PORT, &request("POST", "/v1/status", b"{}"))
+    .body
+    .unwrap();
+  assert_eq!(status["info"]["updateReady"], "3.2.105");
+  assert_eq!(status["info"]["extensionVersion"], "3.2.105");
+
+  // Won't restart in the middle of a download.
+  host.state.set_items(vec![BridgeItem {
+    id: "g1".into(),
+    state: "downloading".into(),
+    ..BridgeItem::default()
+  }]);
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/restart", b"{}")).status,
+    409
+  );
+  assert_eq!(*host.restarted.borrow(), 0);
+
+  host.state.set_items(vec![BridgeItem {
+    id: "g1".into(),
+    state: "done".into(),
+    ..BridgeItem::default()
+  }]);
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/restart", b"{}")).status,
+    200
+  );
+  assert_eq!(*host.restarted.borrow(), 1);
+
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/reveal-extension", b"{}")).status,
+    200
+  );
+  assert_eq!(*host.revealed.borrow(), 1);
+
+  // A website can't restart the app.
+  let mut from_site = request("POST", "/v1/restart", b"{}");
+  from_site.origin = Some("https://evil.example");
+  assert_eq!(route(&host, PORT, &from_site).status, 403);
+  assert_eq!(*host.restarted.borrow(), 1);
 }

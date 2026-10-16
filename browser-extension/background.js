@@ -40,7 +40,13 @@ async function follow(requestId, info) {
 async function refresh() {
   try {
     const status = await api('/v1/status');
-    latest = { connected: true, version: status.version, items: status.items ?? [], checkedAt: Date.now() };
+    latest = {
+      connected: true,
+      version: status.version,
+      info: status.info ?? {},
+      items: status.items ?? [],
+      checkedAt: Date.now(),
+    };
   } catch (error) {
     if (!(error instanceof AppNotRunning)) console.debug('Status check failed', error);
     latest = { connected: false, items: [], checkedAt: Date.now() };
@@ -54,7 +60,29 @@ async function refresh() {
   }
   await updateBadge();
   await notifyFinished();
+  await reloadIfUpdated();
   return latest;
+}
+
+// ---------- Updating itself ----------
+
+// The app carries this extension's files and puts new ones in its folder
+// whenever the app updates. When the app reports a different version than the
+// one running here, reload to pick the new files up. (If this copy was loaded
+// from some other folder, reloading changes nothing; the popup then explains.)
+const RELOAD_RETRY_MS = 6 * 60 * 60 * 1000;
+
+async function reloadIfUpdated() {
+  const wanted = latest.info?.extensionVersion;
+  if (!latest.connected || !wanted || wanted === chrome.runtime.getManifest().version) return;
+  // Don't pull the rug out from under an open popup or picker.
+  if (listeners.size > 0) return;
+  const followed = await getFollowed();
+  if (Object.values(followed).some(f => !f.chosen)) return;
+  const { reloadAttempt } = await chrome.storage.local.get('reloadAttempt');
+  if (reloadAttempt?.version === wanted && Date.now() - reloadAttempt.at < RELOAD_RETRY_MS) return;
+  await chrome.storage.local.set({ reloadAttempt: { version: wanted, at: Date.now() } });
+  chrome.runtime.reload();
 }
 
 async function hasOpenRequests() {
@@ -316,6 +344,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     listeners.delete(port);
     if (port.name.startsWith('picker:')) void pickerClosed(port.name.slice('picker:'.length));
+    if (listeners.size === 0) setTimeout(() => void reloadIfUpdated(), 1500);
   });
   // Fresh enough? Show it now; otherwise the next check sends it in a moment.
   if (Date.now() - latest.checkedAt < 3000) port.postMessage({ type: 'status', ...latest });
@@ -349,7 +378,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })());
     case 'find-app':
       return reply(findApp());
+    case 'restart-app':
+      return reply(api('/v1/restart').catch(() => ({ ok: false, error: 'app-not-running' })));
+    case 'reveal-extension':
+      return reply(api('/v1/reveal-extension').catch(() => ({ ok: false, error: 'app-not-running' })));
     default:
       return false;
   }
 });
+
+// Each time the service worker starts: catch up on downloads and updates.
+void keepWatching();

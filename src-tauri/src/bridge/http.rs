@@ -26,7 +26,17 @@ pub trait BridgeHost {
   fn open_path(&self, path: &str, reveal: bool) -> Result<(), String>;
   fn show_window(&self);
   fn version(&self) -> String;
+  /// The app's version, an installed update waiting for a restart, and the
+  /// version of the extension files the app carries.
+  fn app_info(&self) -> Value;
+  /// Restarts the app (to finish an update).
+  fn restart(&self);
+  /// Shows the extension's folder in Finder.
+  fn reveal_extension(&self) -> Result<(), String>;
 }
+
+/// States where restarting would interrupt something.
+const BUSY_STATES: &[&str] = &["fetching", "pick", "saveAs", "downloading"];
 
 pub struct HttpRequest<'a> {
   pub method: &'a str,
@@ -119,14 +129,40 @@ pub fn route(host: &dyn BridgeHost, port: u16, request: &HttpRequest) -> HttpRes
     // extension uses POST for everything; GET still works for other callers.
     ("GET" | "POST", "/v1/ping") => HttpResponse::json(
       200,
-      json!({ "ok": true, "app": "open-video-downloader-save-as", "version": host.version() }),
+      json!({
+        "ok": true,
+        "app": "open-video-downloader-save-as",
+        "version": host.version(),
+        "info": host.app_info(),
+      }),
       origin,
     ),
     ("GET" | "POST", "/v1/status") => HttpResponse::json(
       200,
-      json!({ "ok": true, "version": host.version(), "items": host.state().items() }),
+      json!({
+        "ok": true,
+        "version": host.version(),
+        "info": host.app_info(),
+        "items": host.state().items(),
+      }),
       origin,
     ),
+    ("POST", "/v1/restart") => {
+      let busy = host
+        .state()
+        .items()
+        .iter()
+        .any(|item| BUSY_STATES.contains(&item.state.as_str()));
+      if busy {
+        return HttpResponse::json(409, json!({ "ok": false, "error": "busy" }), origin);
+      }
+      host.restart();
+      HttpResponse::json(200, json!({ "ok": true }), origin)
+    }
+    ("POST", "/v1/reveal-extension") => match host.reveal_extension() {
+      Ok(()) => HttpResponse::json(200, json!({ "ok": true }), origin),
+      Err(error) => HttpResponse::json(404, json!({ "ok": false, "error": error }), origin),
+    },
     ("POST", "/v1/download") => {
       let Ok(body) = serde_json::from_slice::<DownloadBody>(request.body) else {
         return HttpResponse::json(400, json!({ "ok": false, "error": "bad request" }), origin);

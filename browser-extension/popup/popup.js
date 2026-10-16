@@ -92,7 +92,58 @@ async function showPage() {
   }
 }
 
-function render({ connected, items }) {
+let bannerKey = '';
+
+/** "Update ready" from the app, or a hint when this copy can't update itself. */
+async function renderBanner({ connected, info }) {
+  const banner = $('banner');
+  const mine = chrome.runtime.getManifest().version;
+  const wanted = info?.extensionVersion;
+  let reloadAttempt;
+  try {
+    ({ reloadAttempt } = await chrome.storage.local.get('reloadAttempt'));
+  } catch {
+    reloadAttempt = undefined;
+  }
+
+  const stuck = connected && wanted && wanted !== mine && reloadAttempt?.version === wanted;
+  const key = `${connected && info?.updateReady ? info.updateReady : ''}|${stuck ? wanted : ''}`;
+  if (key === bannerKey) return;
+  bannerKey = key;
+
+  const rows = [];
+  if (connected && info?.updateReady) {
+    const restart = button('Restart app', async () => {
+      restart.disabled = true;
+      const result = await send({ type: 'restart-app' });
+      if (!result?.ok) {
+        restart.disabled = false;
+        note.textContent = result?.error === 'busy'
+          ? 'Finish the downloads in progress first.'
+          : 'Couldn’t restart it. Quit and reopen the app instead.';
+      }
+    }, 'primary');
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.append(text('p', '', `Version ${info.updateReady} is installed.`), restart);
+    const note = text('p', 'small', 'Restart the app to start using it (or it switches over next time it opens).');
+    rows.push(row, note);
+  }
+  if (stuck) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.append(
+      text('p', '', 'This copy of the extension can’t update itself.'),
+      button('Show folder', () => void send({ type: 'reveal-extension' })),
+    );
+    rows.push(row, text('p', 'small', 'Remove it in chrome://extensions, then load the app’s “Chrome Extension” folder instead. From then on it updates with the app.'));
+  }
+  banner.replaceChildren(...rows);
+  banner.hidden = rows.length === 0;
+}
+
+function render({ connected, items, info }) {
+  void renderBanner({ connected, info });
   const connection = $('connection');
   connection.classList.toggle('on', connected);
   connection.classList.toggle('off', !connected);

@@ -1,10 +1,11 @@
 use crate::commands::UpdateStore;
 use crate::paths::PathsManager;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_updater::{Result as UpdaterResult, UpdaterExt};
 use tokio::sync::Mutex;
 
-/// True for this fork's builds, which turn off the original project's updates and crash reporting.
+/// True for this fork's builds: no crash reports to the original project, and
+/// updates come from the fork's own releases (see tauri.conf.json).
 pub const FORK_BUILD: bool = true;
 
 #[derive(serde::Serialize)]
@@ -22,9 +23,15 @@ pub async fn updater_check(
 ) -> UpdaterResult<UpdateCheck> {
   let current = app.package_info().version.to_string();
   // Portable app does not auto-update, nor does the microsoft/snap store version.
-  // This fork never auto-updates: the update feed is the original project's, and
-  // installing it would replace the fork and remove its features.
-  if FORK_BUILD || paths.is_microsoft_store_app() || paths.is_portable_app() || paths.is_snap_app()
+  // The fork updates itself in the background (auto_update.rs), so the in-app
+  // "update available" banner stays out of the way.
+  let handled_in_background = app
+    .try_state::<crate::auto_update::AutoUpdateState>()
+    .is_some();
+  if handled_in_background
+    || paths.is_microsoft_store_app()
+    || paths.is_portable_app()
+    || paths.is_snap_app()
   {
     return Ok(UpdateCheck {
       available: false,

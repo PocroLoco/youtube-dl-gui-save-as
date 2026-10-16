@@ -63,3 +63,16 @@ li.done .status { color: var(--success); }
 .icon-button { padding: 5px; border-radius: 7px; background: transparent; border-color: transparent; color: var(--muted); }
 .icon-button:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
 .empty { margin: 4px 8px 6px; color: var(--muted); }
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+.banner p { margin: 0; line-height: 1.4; }
+.banner p.small { color: var(--muted); font-size: 12px; }
+.banner .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.banner button { padding: 5px 10px; font-size: 12px; flex: none; }

@@ -54,7 +54,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../licenses/3rdpartylicenses.txt": "licenses/3rdpartylicenses.txt"
+      "../licenses/3rdpartylicenses.txt": "licenses/3rdpartylicenses.txt",
+      "../browser-extension/": "browser-extension/"
     },
     "macOS": {
       "signingIdentity": "Developer ID Application"
@@ -85,9 +86,9 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNBRTI0NDIwNzRDQUIzRUMKUldUc3M4cDBJRVRpT21CaVE1VmRZQ3pLSGZKb2F3OGRkM2ZCYXEyYStUQ0UyNnJ0aDBKMXh3eU4K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0NTdEQUI5NzZBQjI0MDgKUldRSUpLdDJ1ZHBYVkZyUnhMSC9GamxVTFpFMWJLcjh5UG5OWGZrZkxBTVd6MEN4bExZWkN3V20K",
       "endpoints": [
-        "https://github.com/jely2002/youtube-dl-gui/releases/latest/download/latest.json"
+        "https://github.com/PocroLoco/youtube-dl-gui-save-as/releases/download/mac-build/latest.json"
       ],
       "windows": {
         "installMode": "passive"

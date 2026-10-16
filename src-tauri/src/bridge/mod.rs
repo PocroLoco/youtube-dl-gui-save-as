@@ -207,6 +207,44 @@ impl<R: Runtime> BridgeHost for AppBridgeHost<R> {
   fn version(&self) -> String {
     self.app.package_info().version.to_string()
   }
+
+  fn app_info(&self) -> serde_json::Value {
+    let update_ready = self
+      .app
+      .try_state::<crate::auto_update::AutoUpdateState>()
+      .and_then(|state| state.installed());
+    let extension_version = self
+      .app
+      .try_state::<crate::extension_files::ExtensionFiles>()
+      .and_then(|files| files.version());
+    serde_json::json!({
+      "version": self.version(),
+      "updateReady": update_ready,
+      "extensionVersion": extension_version,
+    })
+  }
+
+  fn restart(&self) {
+    let app = self.app.clone();
+    // Answer the extension first, then restart.
+    std::thread::spawn(move || {
+      std::thread::sleep(std::time::Duration::from_millis(400));
+      app.restart();
+    });
+  }
+
+  fn reveal_extension(&self) -> Result<(), String> {
+    let folder = self
+      .app
+      .try_state::<crate::extension_files::ExtensionFiles>()
+      .and_then(|files| files.folder())
+      .ok_or("The extension isn't bundled with this build.")?;
+    self
+      .app
+      .opener()
+      .reveal_item_in_dir(folder)
+      .map_err(|error| error.to_string())
+  }
 }
 
 /// Starts the local server on the first free port. If none is free the

@@ -32,6 +32,8 @@ const allowedCommands: Set<string> = new Set([
     'bridge_status_set',
     'bridge_step_back',
     'bring_window_forward',
+    'extension_folder_reveal',
+    'extension_folder_info',
     'plugin:shell|open',
     'plugin:event|listen',
     'plugin:event|unlisten',

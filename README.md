@@ -4,10 +4,12 @@
 >
 > **Mac download:** grab the `.dmg` from the [Mac build release](../../releases/tag/mac-build). It isn't signed with an Apple developer certificate, so macOS blocks it the first time: click **Done**, then go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**. You only have to do this once.
 >
-> **Chrome extension (optional):** download without leaving the browser. On a video page (YouTube, Shorts, TikTok, …) click the extension's icon, pick **Video + Audio / Audio only / Video only** and the quality, hit **Download**, then pick where to save it. The icon shows progress; click a finished download to open it. Right-clicking a page or link works too. If the app is closed, the extension starts it in the background.
-> To install: grab `Open-Video-Downloader-Save-As_chrome-extension.zip` from the same [release](../../releases/tag/mac-build), unzip it, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick the unzipped folder. The first time it starts the app, Chrome asks to open Open Video Downloader: tick **Always allow** and click **Open**. More in [browser-extension/README.md](browser-extension/README.md).
+> **Updates are automatic.** The app checks this fork's releases every few hours, installs new versions in the background, and switches over the next time it starts (or right away from the extension's **Restart app** button). Updates are signed, so only builds from this repo get installed.
 >
-> This fork doesn't auto-update or send crash reports to the original project. Everything else below is the original README.
+> **Chrome extension (optional):** download without leaving the browser. On a video page (YouTube, Shorts, TikTok, …) click the extension's icon, pick **Video + Audio / Audio only / Video only** and the quality, hit **Download**, then pick where to save it. The icon shows progress; click a finished download to open it. Right-clicking a page or link works too. If the app is closed, the extension starts it in the background.
+> To install: in the app, open **Settings → System → Chrome extension** and click **Show folder**. Open `chrome://extensions`, turn on **Developer mode**, and drag that **Chrome Extension** folder onto the page (or click **Load unpacked** and pick it). Loaded from there, the extension updates itself whenever the app updates. The first time it starts the app, Chrome asks to open Open Video Downloader: tick **Always allow** and click **Open**. More in [browser-extension/README.md](browser-extension/README.md).
+>
+> This fork gets its updates from this repo (never from the original project, which would replace it) and doesn't send crash reports. Everything else below is the original README.
 
 <img src="https://raw.githubusercontent.com/jely2002/youtube-dl-gui/v2.0.0/renderer/img/icon.png" alt="logo" align="left" height="100"/>
 

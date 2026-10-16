@@ -21,17 +21,25 @@ does the actual downloading.
 You also need the app: the `.dmg` from the
 [Mac build release](https://github.com/PocroLoco/youtube-dl-gui-save-as/releases/tag/mac-build).
 
-## Install
+## Install (once)
 
-1. Download `Open-Video-Downloader-Save-As_chrome-extension.zip` from the same release and unzip it.
+1. In the app, open **Settings → System → Chrome extension** and click **Show folder**.
+   It opens the **Chrome Extension** folder the app keeps up to date.
 2. Open `chrome://extensions` and turn on **Developer mode** (top right).
-3. Click **Load unpacked** and pick the unzipped folder. (Updating? Remove the
-   old one first, or replace its files and click its reload button.)
+3. Drag the **Chrome Extension** folder onto that page (or click **Load unpacked**
+   and pick it).
 4. Pin it: click the puzzle icon in Chrome's toolbar, then the pin next to it.
 5. The first time the extension starts the app, Chrome asks to open
    Open Video Downloader. Tick **Always allow** and click **Open**.
 
 Works in Chrome, Edge, Brave and other Chromium browsers.
+
+## Updates
+
+Nothing to do. The app updates itself in the background and carries the
+extension's newest files; the extension notices and reloads itself. If you
+loaded the extension from somewhere else (like a zip from the release), the
+popup says so and shows you the right folder to load instead.
 
 ## Privacy and security
 
