@@ -1,5 +1,5 @@
 use super::http::{authorize, route, BridgeHost, HttpRequest};
-use super::state::BridgeCancel;
+use super::state::{BridgeCancel, BridgeClip};
 use super::*;
 use std::cell::RefCell;
 
@@ -337,6 +337,7 @@ fn pick_a_format_then_download() {
       height: Some(1080),
       fps: Some(60.0),
       abr: None,
+      clip: None,
     })
   );
   assert_eq!(*host.notified.borrow(), 2);
@@ -346,6 +347,47 @@ fn pick_a_format_then_download() {
   assert_eq!(json["kind"], "choose");
   assert_eq!(json["requestId"], "r-pick");
   assert_eq!(json["trackType"], "both");
+}
+
+#[test]
+fn a_clip_reaches_the_app() {
+  let host = FakeHost::default();
+  let choice =
+    br#"{"requestId":"r-clip","trackType":"both","height":720,"clip":{"start":754.6,"end":814.2}}"#;
+  assert_eq!(
+    route(&host, PORT, &request("POST", "/v1/choose", choice)).status,
+    200
+  );
+  let pending = host.state.take_pending();
+  let BridgeCommand::Choose(sent) = &pending[0] else {
+    panic!("expected a choice, got {pending:?}");
+  };
+  assert_eq!(
+    sent.clip,
+    Some(BridgeClip {
+      start: 754.6,
+      end: 814.2
+    })
+  );
+  let json = serde_json::to_value(&pending[0]).unwrap();
+  assert_eq!(json["clip"]["start"], 754.6);
+  assert_eq!(json["clip"]["end"], 814.2);
+
+  // The extension sees which part is downloading.
+  host.state.set_items(vec![BridgeItem {
+    id: "g1".into(),
+    request_id: Some("r-clip".into()),
+    state: "downloading".into(),
+    clip: Some(BridgeClip {
+      start: 754.0,
+      end: 815.0,
+    }),
+    ..BridgeItem::default()
+  }]);
+  let body = route(&host, PORT, &request("POST", "/v1/status", b"{}"))
+    .body
+    .unwrap();
+  assert_eq!(body["items"][0]["clip"]["start"], 754.0);
 }
 
 #[test]
@@ -377,6 +419,12 @@ fn odd_choices_are_refused() {
     br#"{"requestId":"r-1","trackType":"both","height":99999}"#,
     br#"{"requestId":"r-1","trackType":"audio","abr":-5}"#,
     br#"{"trackType":"both"}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"start":90,"end":30}}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"start":-1,"end":30}}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"start":5,"end":5}}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"start":0,"end":1e9}}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"start":"0","end":30}}"#,
+    br#"{"requestId":"r-1","trackType":"both","clip":{"end":30}}"#,
   ] {
     let response = route(&host, PORT, &request("POST", "/v1/choose", body));
     assert_eq!(response.status, 400, "{}", String::from_utf8_lossy(body));

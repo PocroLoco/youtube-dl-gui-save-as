@@ -18,6 +18,14 @@ export type BridgeChoice = {
   height?: number;
   fps?: number;
   abr?: number;
+  /** Only download this part of the video. */
+  clip?: BridgeClip;
+};
+
+/** A part of a video, in seconds from the start. */
+export type BridgeClip = {
+  start: number;
+  end: number;
 };
 
 export type BridgeCommand
@@ -65,4 +73,6 @@ export type BridgeItem = {
   choices?: BridgeChoices;
   /** Still in the browser's picker; not a real download yet. */
   pending?: boolean;
+  /** Only this part of the video is downloaded. */
+  clip?: BridgeClip;
 };

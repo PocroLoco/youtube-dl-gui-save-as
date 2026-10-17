@@ -10,7 +10,7 @@ import { useMediaDestinationStore } from '../../src/stores/media/destination';
 import { useSettingsStore } from '../../src/stores/settings';
 import { usePreferencesStore } from '../../src/stores/preferences';
 import { defaultSettings } from '../../src/tauri/types/config';
-import { AudioFormat, TrackType, VideoContainer, type SaveAsChoice } from '../../src/tauri/types/media';
+import { AudioFormat, TrackType, VideoContainer, type OutputOverrides } from '../../src/tauri/types/media';
 import { ProgressCategory, ProgressStage } from '../../src/tauri/types/progress';
 import type { BridgeCommand, BridgeRequest } from '../../src/tauri/types/bridge';
 
@@ -19,7 +19,7 @@ type DownloadCall = {
   groupId: string;
   items: Array<{
     format: { trackType: TrackType; height?: number; fps?: number; abr?: number; id?: string };
-    overrides?: { output?: { saveAs?: SaveAsChoice } };
+    overrides?: { output?: Pick<OutputOverrides, 'saveAs' | 'partialDownload' | 'preciseCuts'> };
   }>;
 };
 
@@ -253,6 +253,39 @@ describe('picking the format in the browser', () => {
 
     expect(dialogs[0].options.defaultPath).toBe('/Users/me/Downloads/Cats The Movie.mp3');
     expect(downloads[0].items[0].format).toMatchObject({ trackType: TrackType.audio, abr: 160 });
+  });
+
+  it('downloads just the clip picked in the browser, cut exactly', async () => {
+    const { commands, dialogs, downloads, bridgeStore } = setup(['/Users/me/Movies/cats clip.mp4']);
+    const running = bridgeStore.handleRequest(request({ requestId: 'r-clip', chooseFormat: true }));
+    await waitFor(() => bridgeStore.snapshot().some(i => i.requestId === 'r-clip' && i.state === 'pick'));
+
+    commands.push({
+      kind: 'choose', requestId: 'r-clip', trackType: TrackType.both, height: 720,
+      clip: { start: 12.7, end: 74.2 },
+    });
+    await bridgeStore.drain();
+    await running;
+
+    expect(dialogs[0].options.defaultPath).toBe('/Users/me/Downloads/Cats The Movie (clip 0m12s-1m15s).mp4');
+    const output = downloads[0].items[0].overrides?.output;
+    expect(output?.partialDownload?.section).toMatchObject({ start: '00:00:12', end: '00:01:15' });
+    expect(output?.preciseCuts).toBe(true);
+    expect(output?.saveAs).toEqual({ filePath: '/Users/me/Movies/cats clip.mp4' });
+    expect(bridgeStore.snapshot().find(i => i.requestId === 'r-clip')?.clip).toEqual({ start: 12, end: 75 });
+  });
+
+  it('downloads the whole video when the clip covers all of it', async () => {
+    const { commands, downloads, bridgeStore } = setup(['/Users/me/Movies/cats.mp4']);
+    const running = bridgeStore.handleRequest(request({ requestId: 'r-all', chooseFormat: true }));
+    await waitFor(() => bridgeStore.snapshot().some(i => i.requestId === 'r-all' && i.state === 'pick'));
+
+    // The video is 95 seconds long.
+    commands.push({ kind: 'choose', requestId: 'r-all', trackType: TrackType.both, clip: { start: 0, end: 300 } });
+    await bridgeStore.drain();
+    await running;
+
+    expect(downloads[0].items[0].overrides?.output?.partialDownload).toBeUndefined();
   });
 
   it('leaves nothing behind when the picker is closed', async () => {

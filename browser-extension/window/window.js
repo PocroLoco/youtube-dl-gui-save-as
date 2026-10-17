@@ -96,6 +96,7 @@ function showPicker() {
   mountPicker(main, {
     url: params.url,
     title: params.title,
+    tabId: Number.isInteger(params.tabId) ? params.tabId : undefined,
     onPicked: followUntilSaved,
     onAppMissing: () => void waitForApp(true),
   });

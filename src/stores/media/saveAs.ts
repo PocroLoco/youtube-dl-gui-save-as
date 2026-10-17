@@ -33,6 +33,15 @@ function toFileName(title: string | undefined): string {
   return cleaned || 'video';
 }
 
+/** "1h02m03s" / "12m34s", for a clip's file name (no ":" on macOS). */
+function clipTime(clock: string): string {
+  const [h, m, s] = clock.split(':').map(Number);
+  if ([h, m, s].some(Number.isNaN)) return clock.replace(/:/g, '-');
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}h${mm}m${ss}s` : `${m}m${ss}s`;
+}
+
 /**
  * Browser-style "Save as": before a download starts, ask where it should go.
  * One window at a time, and each group remembers its answer so pause/resume
@@ -102,7 +111,9 @@ export const useMediaSaveAsStore = defineStore('media-save-as', () => {
 
     if (isSingleFile) {
       const extension = expectedExtension(group.id, options.trackType);
-      const name = toFileName(items[0].title ?? group.title) + (extension ? `.${extension}` : '');
+      const section = optionsStore.getOverrides(group.id)?.output?.partialDownload?.section;
+      const clip = section ? ` (clip ${clipTime(section.start)}-${clipTime(section.end)})` : '';
+      const name = toFileName(items[0].title ?? group.title) + clip + (extension ? `.${extension}` : '');
       const filePath = await save({
         title: i18n.global.t('location.askDownloadLocation.dialogTitle'),
         defaultPath: dir ? `${dir}${separatorFor(dir)}${name}` : name,

@@ -248,9 +248,12 @@ async function prepare({ url, title, exact }) {
   }
 }
 
-async function choose({ requestId, trackType, height, fps, abr }) {
+async function choose({ requestId, trackType, height, fps, abr, clip }) {
+  const part = clip && Number.isFinite(clip.start) && Number.isFinite(clip.end) && clip.end > clip.start
+    ? { start: Math.max(0, clip.start), end: clip.end }
+    : undefined;
   try {
-    const result = await api('/v1/choose', { requestId, trackType, height, fps, abr });
+    const result = await api('/v1/choose', { requestId, trackType, height, fps, abr, clip: part });
     if (!result?.ok) return { ok: false, error: result?.error ?? 'The app said no.' };
   } catch (e) {
     return { ok: false, error: e instanceof AppNotRunning ? 'Open Video Downloader isn’t running.' : String(e) };
@@ -281,8 +284,9 @@ async function pickerClosed(requestId) {
 }
 
 /** A small window with the picker (it also starts the app when needed). */
-async function openPickerWindow({ url, title }) {
-  const page = chrome.runtime.getURL(`window/window.html#${encodeURIComponent(JSON.stringify({ url, title }))}`);
+async function openPickerWindow({ url, title, tabId }) {
+  // tabId: the tab playing the video, so a clip can start where it is now.
+  const page = chrome.runtime.getURL(`window/window.html#${encodeURIComponent(JSON.stringify({ url, title, tabId }))}`);
   const width = 400;
   const height = 600;
   let position = {};
@@ -316,13 +320,14 @@ function createMenus() {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const url = info.menuItemId === 'link' ? info.linkUrl : info.pageUrl;
-  if (url) void openPickerWindow({ url, title: info.menuItemId === 'link' ? undefined : tab?.title });
+  const isPage = info.menuItemId !== 'link';
+  if (url) void openPickerWindow({ url, title: isPage ? tab?.title : undefined, tabId: isPage ? tab?.id : undefined });
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command !== 'download-video') return;
   const target = tab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  if (target?.url && isDownloadablePage(target.url)) await openPickerWindow({ url: target.url, title: target.title });
+  if (target?.url && isDownloadablePage(target.url)) await openPickerWindow({ url: target.url, title: target.title, tabId: target.id });
 });
 
 chrome.runtime.onInstalled.addListener(() => {

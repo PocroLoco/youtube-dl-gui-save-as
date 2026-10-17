@@ -49,7 +49,7 @@ function offerToStart() {
     text('p', 'page-title', activeTab?.title || pageUrl),
     text('p', '', 'Open Video Downloader isn’t running. Start it and pick the format there.'),
     button('Start and download', async () => {
-      await send({ type: 'open-picker-window', url: activeTab?.url ?? pageUrl, title: activeTab?.title });
+      await send({ type: 'open-picker-window', url: activeTab?.url ?? pageUrl, title: activeTab?.title, tabId: activeTab?.id });
       window.close();
     }, 'primary'),
   );
@@ -61,15 +61,16 @@ function showPicker() {
     // The tab's own link; the extension tidies it up (and can fall back to it).
     url: activeTab?.url ?? pageUrl,
     title: activeTab?.title,
+    tabId: activeTab?.id,
     onAppMissing: offerToStart,
   });
 }
 
 async function showPage() {
-  // popup.html#url=…&title=… stands in for the current tab (used by the extension's tests).
+  // popup.html#url=…&title=…&tabId=… stands in for the current tab (used by the extension's tests).
   const forced = new URLSearchParams(location.hash.slice(1));
   [activeTab] = forced.get('url')
-    ? [{ url: forced.get('url'), title: forced.get('title') ?? undefined }]
+    ? [{ url: forced.get('url'), title: forced.get('title') ?? undefined, id: forced.get('tabId') ? Number(forced.get('tabId')) : undefined }]
     : await chrome.tabs.query({ active: true, currentWindow: true });
   pageUrl = activeTab?.url ? cleanVideoUrl(activeTab.url) : null;
   if (!pageUrl || !isDownloadablePage(pageUrl)) {

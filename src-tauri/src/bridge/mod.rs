@@ -170,7 +170,11 @@ pub fn validate_choice(choice: &BridgeChoice) -> bool {
   let abr_ok = choice
     .abr
     .is_none_or(|a| a.is_finite() && (0.0..=10_000.0).contains(&a));
-  id_ok && track_ok && height_ok && fps_ok && abr_ok
+  // Up to ~11 days of video, and the end has to come after the start.
+  let clip_ok = choice.clip.is_none_or(|c| {
+    c.start.is_finite() && c.end.is_finite() && c.start >= 0.0 && c.end > c.start && c.end <= 1e6
+  });
+  id_ok && track_ok && height_ok && fps_ok && abr_ok && clip_ok
 }
 
 struct AppBridgeHost<R: Runtime> {

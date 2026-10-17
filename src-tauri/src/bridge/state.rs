@@ -44,6 +44,16 @@ pub struct BridgeChoice {
   pub fps: Option<f64>,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub abr: Option<f64>,
+  /// Only download this part of the video.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub clip: Option<BridgeClip>,
+}
+
+/// A part of a video, in seconds from the start.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct BridgeClip {
+  pub start: f64,
+  pub end: f64,
 }
 
 /// The browser closed the format picker without downloading.
@@ -110,6 +120,9 @@ pub struct BridgeItem {
   /// While waiting for the browser: the formats to pick from.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub choices: Option<serde_json::Value>,
+  /// Set when only part of the video is downloaded.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub clip: Option<BridgeClip>,
 }
 
 #[derive(Default)]

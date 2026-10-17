@@ -12,12 +12,14 @@ import { DownloadOptions, MediaFormat, SaveAsChoice, TrackType } from '../tauri/
 import {
   BridgeChoice,
   BridgeChoices,
+  BridgeClip,
   BridgeCommand,
   BridgeItem,
   BridgeItemState,
   BridgeRequest,
 } from '../tauri/types/bridge';
 import { approxAudio, approxVideo, sortFormats } from '../helpers/formats';
+import { formatSecondsAsClock, toSeconds } from '../helpers/partialDownload';
 
 const REPORT_INTERVAL_MS = 600;
 const MAX_REPORTED = 30;
@@ -128,6 +130,40 @@ export const useBridgeStore = defineStore('bridge', () => {
     return { trackType: choice.trackType, ...(match ?? {}) };
   }
 
+  /**
+   * A clip picked in the browser becomes the app's own "download part of the
+   * video" setting, with exact cuts so it starts and ends where you said.
+   */
+  function applyClip(groupId: string, clip: BridgeClip | undefined) {
+    const group = groupStore.findGroupById(groupId);
+    if (!clip || !group) return;
+    const start = Math.max(0, Math.floor(clip.start));
+    let end = Math.ceil(clip.end);
+    if (group.duration) end = Math.min(end, Math.ceil(group.duration));
+    if (end <= start) return;
+    // The whole thing anyway: a normal download.
+    if (start === 0 && group.duration && end >= Math.floor(group.duration)) return;
+    const current = optionsStore.getOverrides(groupId);
+    optionsStore.setOverrides(groupId, {
+      ...current,
+      output: {
+        ...current?.output,
+        preciseCuts: true,
+        partialDownload: {
+          section: { id: 'browser-clip', start: formatSecondsAsClock(start), end: formatSecondsAsClock(end) },
+        },
+      },
+    });
+  }
+
+  function clipOf(groupId: string): BridgeClip | undefined {
+    const section = optionsStore.getOverrides(groupId)?.output?.partialDownload?.section;
+    if (!section) return undefined;
+    const start = toSeconds(section.start);
+    const end = toSeconds(section.end);
+    return start == null || end == null ? undefined : { start, end };
+  }
+
   /** The formats to offer in the browser, labelled like the app's own picker. */
   function choicesFor(groupIds: string[]): BridgeChoices {
     const formats = groupIds.flatMap(id => groupStore.findGroupById(id)?.formats ?? []);
@@ -214,6 +250,9 @@ export const useBridgeStore = defineStore('bridge', () => {
         if (group) group.hidden = false;
       }
       pickedOptions = id => optionsFromChoice(id, choice);
+      // A clip only makes sense for one video, not a playlist.
+      const single = readyIds.length === 1 && !groupStore.findGroupById(readyIds[0])?.isCombined;
+      if (single) applyClip(readyIds[0], choice.clip);
     }
     const optionsOf = pickedOptions ?? (id => optionsFor(id, request.audioOnly));
 
@@ -307,6 +346,7 @@ export const useBridgeStore = defineStore('bridge', () => {
       uploader: group.uploader,
       state,
       pending: group.hidden || undefined,
+      clip: clipOf(groupId),
     };
 
     if (state === 'pick') {

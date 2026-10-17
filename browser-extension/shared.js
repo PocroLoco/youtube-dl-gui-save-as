@@ -179,6 +179,19 @@ function formatEta(seconds) {
 }
 
 /** One line describing where a download is at. */
+function clock(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/** "12:34–13:34" */
+export function clipRange(clip) {
+  return `${clock(clip.start)}–${clock(clip.end)}`;
+}
+
 export function describe(item) {
   switch (item.state) {
     case 'fetching':
@@ -196,6 +209,8 @@ export function describe(item) {
     case 'downloading': {
       if (item.stage && !['initializing', 'downloading'].includes(item.stage)) return 'Finishing up…';
       const parts = [];
+      if (item.clip) parts.push(`Clip ${clipRange(item.clip)}`);
+      if (item.clip && item.percent == null) parts.push('cutting…');
       if (item.total > 1) parts.push(`${item.done ?? 0} of ${item.total}`);
       else if (item.percent != null) parts.push(`${Math.floor(item.percent)}%`);
       if (item.speedBps) parts.push(formatBytes(item.speedBps));

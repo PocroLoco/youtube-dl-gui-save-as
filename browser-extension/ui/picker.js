@@ -3,7 +3,8 @@
 // back to the app, which asks where to save it and downloads.
 // Used by the toolbar popup and by the small picker window.
 
-import { formatDuration } from '../shared.js';
+import { cleanVideoUrl, formatDuration } from '../shared.js';
+import { createClipControls, forgetDraft } from './clip.js';
 
 const TRACKS = [
   { value: 'both', label: 'Video + Audio' },
@@ -64,10 +65,11 @@ function withVideoFallback(choices) {
 
 /**
  * Shows the picker in `root` for `url`.
+ * - tabId: the tab playing the video, so a clip can start "now".
  * - onPicked(requestId): a format was sent to the app.
  * - onAppMissing(): the app isn't running (the host decides how to start it).
  */
-export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
+export function mountPicker(root, { url, title, tabId, onPicked, onAppMissing }) {
   root.replaceChildren();
   root.classList.add('picker');
 
@@ -80,6 +82,10 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
   let fallbackUrl = null;
   let lastRendered = '';
   let destroyed = false;
+  let clipControls = null;
+  let currentItem = null;
+  let goButton = null;
+  const draftKey = cleanVideoUrl(url) ?? url;
 
   const view = el('div', 'picker-view');
   root.append(view);
@@ -111,8 +117,24 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     return kind === 'audio' ? choices.audio : choices.video;
   }
 
+  function updateGo() {
+    if (!goButton) return;
+    goButton.disabled = !selected || !!clipControls?.blocked;
+    goButton.lastChild.textContent = clipControls?.on ? 'Download clip' : 'Download';
+  }
+
+  /** Clips are for one video; a playlist downloads whole. */
+  async function setUpClip(item) {
+    if (item.total > 1 || clipControls) return;
+    const controls = await createClipControls({ duration: item.duration, tabId, draftKey, onChange: updateGo });
+    if (destroyed || lastRendered !== 'pick') return;
+    clipControls = controls;
+    renderPicker(currentItem ?? item);
+  }
+
   function renderPicker(item) {
     lastRendered = 'pick';
+    currentItem = item;
     const card = el('div', 'picker-card');
 
     // What's being downloaded.
@@ -182,15 +204,18 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     go.type = 'button';
     go.innerHTML = ICON_DOWNLOAD;
     go.append(document.createTextNode('Download'));
-    go.disabled = !selected;
     go.addEventListener('click', () => void pick(go));
+    goButton = go;
+    updateGo();
 
-    card.append(head, tracks, qualityLabel, qualities, go, el('p', 'picker-note', 'You’ll pick where to save it next.'));
+    card.append(head, tracks, qualityLabel, qualities);
+    if (clipControls && !(item.total > 1)) card.append(clipControls.element);
+    card.append(go, el('p', 'picker-note', 'You’ll pick where to save it next.'));
     view.replaceChildren(card);
   }
 
   async function pick(button) {
-    if (!selected || !requestId) return;
+    if (!selected || !requestId || clipControls?.blocked) return;
     button.disabled = true;
     const choice = {
       trackType: track,
@@ -198,7 +223,8 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
       fps: track === 'audio' ? undefined : selected.fps,
       abr: track === 'audio' ? selected.abr : undefined,
     };
-    const result = await send({ type: 'choose', requestId, ...choice });
+    const clip = currentItem?.total > 1 ? undefined : clipControls?.value;
+    const result = await send({ type: 'choose', requestId, ...choice, clip });
     if (!result?.ok) {
       button.disabled = false;
       showProblem('Couldn’t send it to the app', result?.error);
@@ -209,6 +235,7 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
     } catch {
       // Remembering the pick is just a convenience.
     }
+    if (clip) forgetDraft(draftKey);
     lastRendered = 'sent';
     const box = el('div', 'picker-message');
     box.append(el('div', 'picker-message-title', 'Choose where to save it'), el('div', 'picker-message-sub', 'Open Video Downloader is asking now.'));
@@ -232,6 +259,7 @@ export function mountPicker(root, { url, title, onPicked, onAppMissing }) {
         else if (!choices.video.length) track = 'audio';
         selected = preselect(optionsFor(track), track, saved);
         renderPicker(item);
+        void setUpClip(item);
       }
     } else if (item.state === 'error') {
       if (fallbackUrl) {
