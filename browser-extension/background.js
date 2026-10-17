@@ -207,6 +207,9 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 const CANCEL_AFTER_MS = 20 * 1000;
 const cancelTimers = new Map();
 const requestForUrl = new Map();
+// Pickers open per request: the popup hands a clip over to the side panel,
+// and both show the same request for a moment.
+const openPickers = new Map();
 
 async function unfollow(requestId) {
   const followed = await getFollowed();
@@ -227,7 +230,7 @@ async function prepare({ url, title, exact }) {
   const fallbackUrl = !exact && /^https?:\/\/(www\.)?rumble\.com\/shorts\//.test(url) ? url : undefined;
 
   const reuse = requestForUrl.get(clean);
-  if (reuse && cancelTimers.has(reuse)) {
+  if (reuse && (cancelTimers.has(reuse) || openPickers.has(reuse))) {
     clearTimeout(cancelTimers.get(reuse));
     cancelTimers.delete(reuse);
     return { ok: true, requestId: reuse, fallbackUrl };
@@ -350,9 +353,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'status' && !port.name.startsWith('picker:')) return;
   listeners.add(port);
+  const pickerFor = port.name.startsWith('picker:') ? port.name.slice('picker:'.length) : null;
+  if (pickerFor) {
+    openPickers.set(pickerFor, (openPickers.get(pickerFor) ?? 0) + 1);
+    clearTimeout(cancelTimers.get(pickerFor));
+    cancelTimers.delete(pickerFor);
+  }
   port.onDisconnect.addListener(() => {
     listeners.delete(port);
-    if (port.name.startsWith('picker:')) void pickerClosed(port.name.slice('picker:'.length));
+    if (pickerFor) {
+      const left = (openPickers.get(pickerFor) ?? 1) - 1;
+      if (left > 0) {
+        openPickers.set(pickerFor, left);
+      } else {
+        openPickers.delete(pickerFor);
+        void pickerClosed(pickerFor);
+      }
+    }
     if (listeners.size === 0) setTimeout(() => void reloadIfUpdated(), 1500);
   });
   // Fresh enough? Show it now; otherwise the next check sends it in a moment.

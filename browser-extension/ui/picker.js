@@ -66,10 +66,13 @@ function withVideoFallback(choices) {
 /**
  * Shows the picker in `root` for `url`.
  * - tabId: the tab playing the video, so a clip can start "now".
+ * - startInClip / onClipOn / onHandedOff: see createClipControls.
  * - onPicked(requestId): a format was sent to the app.
  * - onAppMissing(): the app isn't running (the host decides how to start it).
  */
-export function mountPicker(root, { url, title, tabId, onPicked, onAppMissing }) {
+export function mountPicker(root, {
+  url, title, tabId, onPicked, onAppMissing, startInClip = false, onClipOn, onHandedOff,
+}) {
   root.replaceChildren();
   root.classList.add('picker');
 
@@ -126,7 +129,9 @@ export function mountPicker(root, { url, title, tabId, onPicked, onAppMissing })
   /** Clips are for one video; a playlist downloads whole. */
   async function setUpClip(item) {
     if (item.total > 1 || clipControls) return;
-    const controls = await createClipControls({ duration: item.duration, tabId, draftKey, onChange: updateGo });
+    const controls = await createClipControls({
+      duration: item.duration, tabId, draftKey, onChange: updateGo, startInClip, onClipOn, onHandedOff,
+    });
     if (destroyed || lastRendered !== 'pick') return;
     clipControls = controls;
     renderPicker(currentItem ?? item);

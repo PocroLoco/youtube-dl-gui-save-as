@@ -1,0 +1,20 @@
+html, body { min-height: 100%; }
+body { background: var(--surface); }
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 5;
+}
+.panel-header strong { font-size: 14px; }
+.panel-header span { color: var(--muted); font-size: 11px; }
+.panel-main { padding: 14px; }
+.panel-message { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 24px 8px; }
+.panel-message h1 { font-size: 14px; margin: 0; }
+.panel-message p { margin: 0; color: var(--muted); line-height: 1.45; max-width: 280px; overflow-wrap: anywhere; }
+.panel-message .actions { display: flex; gap: 8px; margin-top: 6px; }

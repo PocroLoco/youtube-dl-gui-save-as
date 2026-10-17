@@ -2,6 +2,8 @@
 // drag the slider, or grab where the video on the page is right now), and
 // only that part gets downloaded.
 
+import { cleanVideoUrl } from '../shared.js';
+
 const DEFAULT_LENGTH = 60;
 const DRAFT_PREFIX = 'clip:';
 // Long enough to scrub to the end you want; not so long that a video you
@@ -42,7 +44,7 @@ export function parseClock(text) {
 // These run inside the page (only after you clicked the extension, so Chrome
 // lets it), and only read or move the video player.
 
-function pageVideoInfo() {
+function pageVideo(action, a, b) {
   const area = (video) => {
     const box = video.getBoundingClientRect();
     return box.width * box.height;
@@ -52,37 +54,34 @@ function pageVideoInfo() {
   const playing = videos.filter(v => !v.paused && !v.ended);
   const pool = playing.length ? playing : videos;
   const video = pool.reduce((best, next) => (area(next) > area(best) ? next : best));
+
+  const previous = window.__ovdClipPreview;
+  if (action !== 'info' && previous) {
+    previous.video.removeEventListener('timeupdate', previous.stop);
+    window.__ovdClipPreview = null;
+  }
+  if (action === 'seek') {
+    // Show that moment, paused, so you can see the exact frame.
+    video.pause();
+    video.currentTime = a;
+  } else if (action === 'preview') {
+    // Play the clip and pause when its end is reached (unless you jumped past it).
+    const stop = () => {
+      if (video.currentTime >= b && video.currentTime < b + 1.5) {
+        video.pause();
+        video.removeEventListener('timeupdate', stop);
+      }
+    };
+    video.currentTime = a;
+    video.addEventListener('timeupdate', stop);
+    window.__ovdClipPreview = { video, stop };
+    void video.play()?.catch?.(() => undefined);
+  }
   return {
     current: video.currentTime,
     duration: Number.isFinite(video.duration) ? video.duration : null,
+    href: location.href,
   };
-}
-
-function pagePreview(start, end) {
-  const area = (video) => {
-    const box = video.getBoundingClientRect();
-    return box.width * box.height;
-  };
-  const videos = [...document.querySelectorAll('video')].filter(v => v.readyState > 0 || v.currentTime > 0);
-  if (!videos.length) return false;
-  const playing = videos.filter(v => !v.paused && !v.ended);
-  const pool = playing.length ? playing : videos;
-  const video = pool.reduce((best, next) => (area(next) > area(best) ? next : best));
-
-  const previous = window.__ovdClipPreview;
-  if (previous) previous.video.removeEventListener('timeupdate', previous.stop);
-  // Pause when the clip's end is reached (but not if you jumped past it yourself).
-  const stop = () => {
-    if (video.currentTime >= end && video.currentTime < end + 1.5) {
-      video.pause();
-      video.removeEventListener('timeupdate', stop);
-    }
-  };
-  video.currentTime = start;
-  video.addEventListener('timeupdate', stop);
-  window.__ovdClipPreview = { video, stop };
-  void video.play()?.catch?.(() => undefined);
-  return true;
 }
 
 async function runInTab(tabId, func, args = []) {
@@ -110,9 +109,10 @@ async function loadDraft(key) {
 
 function saveDraft(key, draft) {
   try {
-    void chrome.storage.session.set({ [DRAFT_PREFIX + key]: draft }).catch(() => undefined);
+    return chrome.storage.session.set({ [DRAFT_PREFIX + key]: draft }).catch(() => undefined);
   } catch {
     // Only a convenience.
+    return Promise.resolve();
   }
 }
 
@@ -124,24 +124,80 @@ export function forgetDraft(key) {
   }
 }
 
+/** Same video? (Ignores the #part and the tidying-up of the link.) */
+function sameVideo(href, key) {
+  const tidy = raw => (cleanVideoUrl(raw) ?? raw ?? '').split('#')[0];
+  return !key || tidy(href) === tidy(key);
+}
+
 /**
  * The clip controls. `duration` is the video's length if known; `tabId` is
- * the tab playing it (for "Now" and "Preview"). onChange() fires whenever
- * the clip, or whether it's on, changes.
+ * the tab playing it (for "Now", "Preview" and moving the video as you set
+ * the times). onChange() fires whenever the clip, or whether it's on, changes.
+ * - startInClip: open with Clip already on.
+ * - onClipOn(): called right when Clip is clicked (still inside the click, so
+ *   it may open Chrome's side panel). Return a promise to hand off: once it
+ *   resolves and the clip is saved, onHandedOff() runs.
  */
-export async function createClipControls({ duration, tabId, draftKey, onChange }) {
-  const [pageVideo, draft] = await Promise.all([
-    runInTab(tabId, pageVideoInfo),
+export async function createClipControls({
+  duration, tabId, draftKey, onChange, startInClip = false, onClipOn, onHandedOff,
+}) {
+  let moved = false;
+  let hadAccess = false;
+  const onPage = async (action, a, b) => {
+    if (moved) return null;
+    // Check it's still the same video before moving anything.
+    const info = await runInTab(tabId, pageVideo, ['info']);
+    if (info) hadAccess = true;
+    if ((!info && hadAccess) || (info && !sameVideo(info.href, draftKey))) {
+      // The tab went on to another video; leave that one alone.
+      moved = true;
+      render?.();
+      return null;
+    }
+    if (!info || action === 'info') return info;
+    // (Chrome can't pass `undefined` into the page.)
+    return runInTab(tabId, pageVideo, [action, a ?? null, b ?? null]);
+  };
+  let render = null;
+  const [pageNow, draft] = await Promise.all([
+    onPage('info'),
     draftKey ? loadDraft(draftKey) : null,
   ]);
-  const length = duration || pageVideo?.duration || null;
-  const hasPage = !!pageVideo;
+  const length = duration || pageNow?.duration || null;
+  const hasPage = !!pageNow;
 
   const clip = { on: false, start: 0, end: length ? Math.min(length, DEFAULT_LENGTH) : DEFAULT_LENGTH };
   if (draft && Number.isFinite(draft.start) && Number.isFinite(draft.end)) {
     Object.assign(clip, { on: !!draft.on, start: draft.start, end: draft.end });
+  } else if (startInClip) {
+    clip.on = true;
+    clip.start = startAt(pageNow);
+    clip.end = length ? Math.min(length, clip.start + DEFAULT_LENGTH) : clip.start + DEFAULT_LENGTH;
   }
   let problem = null;
+  let lastSave = Promise.resolve();
+
+  function startAt(info) {
+    const from = info ? Math.floor(info.current) : 0;
+    return length ? Math.min(from, Math.max(0, Math.floor(length) - 1)) : from;
+  }
+
+  // Move the page's video to a time as you set it (one at a time, latest wins).
+  let seeking = false;
+  let seekNext = null;
+  async function showOnPage(time) {
+    if (!hasPage || moved || time == null) return;
+    seekNext = time;
+    if (seeking) return;
+    seeking = true;
+    while (seekNext != null) {
+      const next = seekNext;
+      seekNext = null;
+      await onPage('seek', next);
+    }
+    seeking = false;
+  }
 
   const root = el('div', 'clip');
 
@@ -211,12 +267,14 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
     const preview = el('button', 'link', '▶ Preview on the page');
     preview.type = 'button';
     preview.addEventListener('click', () => {
-      if (!problem) void runInTab(tabId, pagePreview, [clip.start, clip.end]);
+      if (!problem) void onPage('preview', clip.start, clip.end);
     });
     foot.append(preview);
   }
+  const note = el('p', 'clip-note', 'The tab changed (another video, or it reloaded), so “Now” and “Preview” are off. Close this and click the extension icon on the video again.');
+  note.hidden = true;
 
-  body.append(times, range, foot);
+  body.append(times, range, foot, note);
   root.append(toggle, body);
 
   function check() {
@@ -226,7 +284,9 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
     return null;
   }
 
-  function render({ typing } = {}) {
+  render = ({ typing } = {}) => {
+    note.hidden = !moved;
+    for (const button of root.querySelectorAll('.now, .clip-foot .link')) button.disabled = moved;
     wholeButton.classList.toggle('active', !clip.on);
     clipButton.classList.toggle('active', clip.on);
     wholeButton.setAttribute('aria-checked', String(!clip.on));
@@ -250,14 +310,14 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
     }
     summary.classList.toggle('problem', !!problem);
     summary.textContent = problem ?? `${formatClock(clip.end - clip.start)} clip`;
-  }
+  };
 
   function changed(options) {
     if (clip.on && clip.start != null && clip.end != null && length) {
       clip.end = Math.min(clip.end, length);
     }
     render(options);
-    if (draftKey) saveDraft(draftKey, { on: clip.on, start: clip.start, end: clip.end, at: Date.now() });
+    if (draftKey) lastSave = saveDraft(draftKey, { on: clip.on, start: clip.start, end: clip.end, at: Date.now() });
     onChange?.();
   }
 
@@ -267,17 +327,25 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
   });
   clipButton.addEventListener('click', async () => {
     if (clip.on) return;
+    // First, while this still counts as your click (Chrome's side panel needs that).
+    const handOff = onClipOn?.();
     clip.on = true;
     // Starting fresh: begin where the video is now.
     if (!draft && !clip.touched) {
-      const info = await runInTab(tabId, pageVideoInfo);
-      const from = info ? Math.floor(info.current) : 0;
-      const start = length ? Math.min(from, Math.max(0, Math.floor(length) - 1)) : from;
-      clip.start = start;
-      clip.end = length ? Math.min(length, start + DEFAULT_LENGTH) : start + DEFAULT_LENGTH;
+      clip.start = startAt(await onPage('info'));
+      clip.end = length ? Math.min(length, clip.start + DEFAULT_LENGTH) : clip.start + DEFAULT_LENGTH;
     }
     clip.touched = true;
     changed();
+    if (handOff) {
+      try {
+        await handOff;
+        await lastSave;
+        onHandedOff?.();
+      } catch {
+        // No side panel: carry on right here.
+      }
+    }
   });
 
   for (const [fieldInfo, key] of [[startField, 'start'], [endField, 'end']]) {
@@ -286,12 +354,15 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
       clip.touched = true;
       changed({ typing: key });
     });
-    fieldInfo.input.addEventListener('change', () => changed());
+    fieldInfo.input.addEventListener('change', () => {
+      changed();
+      void showOnPage(clip[key]);
+    });
     fieldInfo.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') fieldInfo.input.blur();
     });
     fieldInfo.now?.addEventListener('click', async () => {
-      const info = await runInTab(tabId, pageVideoInfo);
+      const info = await onPage('info');
       if (!info) return;
       clip[key] = key === 'start' ? Math.floor(info.current) : Math.ceil(info.current);
       clip.touched = true;
@@ -303,11 +374,13 @@ export async function createClipControls({ duration, tabId, draftKey, onChange }
     clip.start = Math.min(Number(low.value), (clip.end ?? length) - 1);
     clip.touched = true;
     changed();
+    void showOnPage(clip.start);
   });
   high.addEventListener('input', () => {
     clip.end = Math.max(Number(high.value), (clip.start ?? 0) + 1);
     clip.touched = true;
     changed();
+    void showOnPage(clip.end);
   });
 
   render();

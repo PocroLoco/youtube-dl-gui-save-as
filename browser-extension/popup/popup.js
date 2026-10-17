@@ -55,6 +55,21 @@ function offerToStart() {
   );
 }
 
+/**
+ * Picking a clip means going back and forth to the video, which closes this
+ * popup. So "Clip" moves the picker to Chrome's side panel, which stays open.
+ * Has to start inside the click; returns a promise (or nothing if the side
+ * panel isn't available, and the clip is picked right here).
+ */
+function openClipPanel() {
+  const tabId = activeTab?.id;
+  if (tabId == null || !chrome.sidePanel?.open) return undefined;
+  const key = `panel:${tabId}`;
+  const told = chrome.storage.session.set({ [key]: { url: activeTab.url, title: activeTab.title, at: Date.now() } });
+  void chrome.sidePanel.setOptions({ tabId, path: 'sidepanel/panel.html', enabled: true });
+  return Promise.all([chrome.sidePanel.open({ tabId }), told]);
+}
+
 function showPicker() {
   picker?.destroy();
   picker = mountPicker($('page'), {
@@ -63,6 +78,8 @@ function showPicker() {
     title: activeTab?.title,
     tabId: activeTab?.id,
     onAppMissing: offerToStart,
+    onClipOn: openClipPanel,
+    onHandedOff: () => window.close(),
   });
 }
 

@@ -9,12 +9,14 @@ does the actual downloading.
    The choices are the video's real formats, same as in the app.
 3. Click **Download**, then pick where to save it (name, folder, new folder).
 
-**Just a clip:** switch **Whole video** to **Clip** and set the start and end:
-type them (`1:30`, `1:02:03`), drag the slider, or pause the video where you
-want and click **Now**. **Preview on the page** plays the clip in the video and
-stops at the end. Cuts are exact (the edges are re-encoded), and the file is
-named like `Title (clip 12m34s-13m34s).mp4`. You can close the popup to scrub
-to the end point; the clip is still set when you reopen it.
+**Just a clip:** switch **Whole video** to **Clip**. The picker moves to
+Chrome's side panel, which stays open while you play, pause and scrub the
+video. Set the start and end by typing them (`1:30`, `1:02:03`), dragging the
+slider (the video jumps to that moment so you see the exact frame), or pausing
+the video where you want and clicking **Now**. **Preview on the page** plays
+the clip and stops at the end. Cuts are exact (the edges are re-encoded), and
+the file is named like `Title (clip 12m34s-13m34s).mp4`. After it downloads,
+**Make another clip** starts the next one from where the video is.
 
 - Works on YouTube (videos and Shorts), TikTok, Instagram, X, Vimeo, Reddit and
   the other sites the app supports. On other sites, click **Find video on this page**.
@@ -57,9 +59,9 @@ popup says so and shows you the right folder to load instead.
   what you download.
 - To open a file, the extension names a download and the app looks up the path
   itself. File paths never reach the browser.
-- "Now" and "Preview" only read and move the video player on the page you
-  clicked the extension on (Chrome's `activeTab` + `scripting`); nothing else
-  on the page is touched.
+- "Now", "Preview" and the slider only read and move the video player on the
+  page you clicked the extension on (Chrome's `activeTab` + `scripting`);
+  nothing else on the page is touched.
 
 ## How it connects (for developers)
 
