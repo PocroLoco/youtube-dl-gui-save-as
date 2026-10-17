@@ -2,7 +2,7 @@
 // own: from the right-click menu, the keyboard shortcut, or when the app has
 // to be started first. Starts the app if needed, shows the format picker,
 // and closes once the download is on its way.
-import { DOWNLOAD_PAGE, START_APP_LINK } from '../shared.js';
+import { DOWNLOAD_PAGE, START_APP_LINK, finishPendingUpdate } from '../shared.js';
 import { mountPicker } from '../ui/picker.js';
 
 const WAIT_MS = 45 * 1000;
@@ -92,7 +92,11 @@ function followUntilSaved(requestId) {
   });
 }
 
-function showPicker() {
+async function showPicker() {
+  if (await finishPendingUpdate((await send({ type: 'status' }))?.info)) {
+    statusBox({ title: 'Finishing an update…', message: 'Try again in a second.' });
+    return;
+  }
   mountPicker(main, {
     url: params.url,
     title: params.title,
@@ -114,7 +118,7 @@ async function waitForApp(launch) {
   for (;;) {
     const app = await send({ type: 'find-app' });
     if (app?.port) {
-      showPicker();
+      void showPicker();
       return;
     }
     if (!helpShown && Date.now() - startedAt > WAIT_MS) {
@@ -131,7 +135,7 @@ async function waitForApp(launch) {
 
 if (params.url) {
   const app = await send({ type: 'find-app' });
-  if (app?.port) showPicker();
+  if (app?.port) void showPicker();
   else void waitForApp(true);
 } else {
   statusBox({

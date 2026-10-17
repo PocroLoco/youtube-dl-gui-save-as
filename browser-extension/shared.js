@@ -157,6 +157,35 @@ export function isDownloadablePage(raw) {
   }
 }
 
+/** How long to wait before trying to reload into the same new version again. */
+export const RELOAD_RETRY_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * The app has already put a newer version's files in the extension's folder,
+ * but Chrome is still running the old one (it only picks up new permissions
+ * and background code on a reload). Pages opened in between would mix the
+ * two, so reload now. Returns true when reloading (this page closes).
+ */
+export async function finishPendingUpdate(info) {
+  const wanted = info?.extensionVersion;
+  if (!wanted || wanted === chrome.runtime.getManifest().version) return false;
+  let attempt;
+  try {
+    ({ reloadAttempt: attempt } = await chrome.storage.local.get('reloadAttempt'));
+  } catch {
+    attempt = undefined;
+  }
+  // Already tried: this copy was loaded from somewhere else and can't update.
+  if (attempt?.version === wanted && Date.now() - attempt.at < RELOAD_RETRY_MS) return false;
+  try {
+    await chrome.storage.local.set({ reloadAttempt: { version: wanted, at: Date.now() } });
+  } catch {
+    // Reload anyway.
+  }
+  setTimeout(() => chrome.runtime.reload(), 900);
+  return true;
+}
+
 export const ACTIVE_STATES = new Set(['fetching', 'saveAs', 'downloading']);
 export const FINAL_STATES = new Set(['done', 'error', 'cancelled']);
 

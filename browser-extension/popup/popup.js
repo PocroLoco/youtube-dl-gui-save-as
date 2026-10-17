@@ -1,4 +1,4 @@
-import { OPEN_APP_LINK, cleanVideoUrl, describe, isDownloadablePage, isKnownVideoPage } from '../shared.js';
+import { OPEN_APP_LINK, cleanVideoUrl, describe, finishPendingUpdate, isDownloadablePage, isKnownVideoPage } from '../shared.js';
 import { mountPicker } from '../ui/picker.js';
 
 const $ = id => document.getElementById(id);
@@ -78,6 +78,13 @@ async function showPage() {
     return;
   }
   const app = await send({ type: 'find-app' });
+  if (app?.port && await finishPendingUpdate((await send({ type: 'status' }))?.info)) {
+    pageMessage(
+      text('p', 'page-title', 'Finishing an update…'),
+      text('p', '', 'Click the extension again in a second.'),
+    );
+    return;
+  }
   if (!app?.port) {
     offerToStart();
   } else if (isKnownVideoPage(pageUrl)) {

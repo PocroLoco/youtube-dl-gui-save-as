@@ -2,6 +2,7 @@ import {
   ACTIVE_STATES,
   AppNotRunning,
   FINAL_STATES,
+  RELOAD_RETRY_MS,
   api,
   cleanVideoUrl,
   findApp,
@@ -70,7 +71,6 @@ async function refresh() {
 // whenever the app updates. When the app reports a different version than the
 // one running here, reload to pick the new files up. (If this copy was loaded
 // from some other folder, reloading changes nothing; the popup then explains.)
-const RELOAD_RETRY_MS = 6 * 60 * 60 * 1000;
 
 async function reloadIfUpdated() {
   const wanted = latest.info?.extensionVersion;
